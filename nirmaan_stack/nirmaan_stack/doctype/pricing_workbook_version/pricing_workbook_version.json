@@ -34,9 +34,8 @@
   },
   {
    "fieldname": "saved_by",
-   "fieldtype": "Link",
-   "label": "Saved By",
-   "options": "User"
+   "fieldtype": "Data",
+   "label": "Saved By"
   },
   {
    "fieldname": "saved_at",

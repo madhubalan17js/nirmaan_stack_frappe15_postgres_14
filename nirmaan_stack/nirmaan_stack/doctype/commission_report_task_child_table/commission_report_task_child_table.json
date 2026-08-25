@@ -90,9 +90,8 @@
         },
         {
             "fieldname": "response_filled_by",
-            "fieldtype": "Link",
-            "label": "Response Filled By",
-            "options": "User"
+            "fieldtype": "Data",
+            "label": "Response Filled By"
         },
         {
             "default": "Handover",

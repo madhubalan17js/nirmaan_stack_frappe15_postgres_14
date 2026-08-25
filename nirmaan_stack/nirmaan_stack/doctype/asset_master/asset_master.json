@@ -129,9 +129,8 @@
   },
   {
    "fieldname": "current_assignee",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Current Assignee",
-   "options": "Nirmaan Users",
    "read_only": 1
   }
  ],

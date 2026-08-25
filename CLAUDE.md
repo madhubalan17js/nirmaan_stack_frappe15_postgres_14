@@ -268,6 +268,43 @@ Why `[:19]` truncation: `frappe.utils.now()` returns microsecond-precision strin
 
 **Sanctioned exception:** A doctype JSON field's `fieldtype` MAY be changed via a deliberate, reviewed, committed CC edit + `bench migrate` when a schema constraint must be corrected (e.g. `source_file_url` Data->Small Text, fix 3815ea3f, 2026-05-30; `description` Data->Text on BOTH `Project Expenses` and `Non Project Expenses`, 2026-07-28 — all four expense dialogs already rendered a `<Textarea>` against a `varchar(140)` column, so a >140-char description hard-failed the save with Frappe's `CharacterLengthExceededError`). Any such change must be isolated to the minimum field diff and explicitly noted here.
 
+**Exercised 2026-08-25 — 17 user-reference fields converted `Link` -> `Data`** (minimum diff:
+`fieldtype` + the dropped `options`, nothing else; `bench migrate` run; 70,659 stored values verified
+byte-identical by per-field checksum). `Nirmaan Notifications.recipient`/`.sender`, `BoQ Row
+Category.human_verdict_by`, `BoQ Review Row.revision_reviewed_by`, `Pricing Access Log.user`,
+`BOQs.uploaded_by`, `Commission Report Task Child Table.response_filled_by`, `Pricing Workbook
+Version.saved_by`, `Project Schedule Milestone.edited_by_user`, `Internal Transfer
+Memo.approved_by`/`.dispatched_by`/`.requested_by`, `Project Snag Batch.uploaded_by`, `Project
+Snag.status_changed_by`, `Reminder Schedule Log.completed_by`, `Procurement
+Requests.project_lead`/`.procurement_executive`. Link and Data are the SAME column
+(`varchar(140)`), so the change is metadata-only.
+
+RATIONALE: a Link to a user BLOCKS that user's deletion, and Frappe's `User.on_trash` NULLS several
+such fields before the check even runs — so an offboarding either failed or destroyed the connection.
+As Data the email simply stays put and resolves to a name via `services/user_directory`.
+
+⚠️ **THE COST IS THAT `rename_doc` CANNOT SEE THEM** (PostgreSQL Gotcha #4 above), so an email rename
+would silently leave all ~70k values on the old address. `services/user_directory.USER_ID_DATA_FIELDS`
+is the owning list and `rename_user_references` is the sweep; `api/users.rename_user_email` calls it
+after `rename_doc`. **A field joining or leaving this set MUST be added to / removed from that list in
+the same change** — nothing else knows these columns hold a user id.
+
+**AMENDED same day — the two ASSET fields were converted too** (`Asset Management.asset_assigned_to`,
+`Asset Master.current_assignee`; 184 values, checksums identical), bringing the set to **19 converted
++ 20 entries in `USER_ID_DATA_FIELDS`**. They were initially held back as CURRENT STATE rather than
+history, on the reasoning that the refusal is what makes someone hand a laptop back. **Owner ruled
+otherwise: assets get the same treatment.**
+
+⚠️ **THAT RULING REMOVED THE ONLY THING GUARDING ASSET RETURN, so the guard now lives in ONE place:**
+`api/users.get_user_offboarding_blockers`. It queries `Asset Management` **DIRECTLY** — a Data field is
+not a reference, so `get_linked_docs` cannot see it and reading assets out of the link check would
+return an empty list forever, silently. Assets are also ORed into `can_offboard`; without that, someone
+holding twelve laptops reports as clear to remove. **Do not delete that endpoint or "simplify" it back
+onto the link check.**
+
+⚠️ **TWO FIELDS REMAIN `Link`** because they are transient locks, not attribution:
+`BoQ Sheet Pricing Lock.locked_by` and `Pricing Workbook.checked_out_by`.
+
 **The same exception covers a field's `description` text, on the same terms** (minimum diff, reviewed, committed, a migrate run afterwards) — **OWNER-RATIFIED, and not to be narrowed back to `fieldtype`-only by a later reader who reads the widening as drift.** A description is what the next implementer reads before touching the field, so a stale one is a defect in the same class as a wrong `fieldtype` — and correcting it changes no column at all, which is exactly what makes it safe. It has been used this way on the two BCS doctypes, `BoQ Sheet` and `BoQ Row BCS Rate`, whose descriptions had outlived the widening that gave the cost layer a third stored rate. Such a diff must stay description-ONLY, verified by comparing the doctype JSON structurally with `description` stripped: identical field lists, identical everything else.
 
 ---

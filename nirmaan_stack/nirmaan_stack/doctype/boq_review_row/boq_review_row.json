@@ -615,9 +615,8 @@
   },
   {
    "fieldname": "revision_reviewed_by",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Revision Reviewed By",
-   "options": "User",
    "read_only": 1
   },
   {

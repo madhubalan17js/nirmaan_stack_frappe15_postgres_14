@@ -46,9 +46,8 @@
   {
    "columns": 2,
    "fieldname": "edited_by_user",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Edited By User",
-   "options": "User",
    "read_only": 1
   },
   {

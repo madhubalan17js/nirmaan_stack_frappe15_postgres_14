@@ -186,9 +186,8 @@
   {
    "description": "The reviewer who recorded the human verdict (frappe.session.user).",
    "fieldname": "human_verdict_by",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Human Verdict By",
-   "options": "User",
    "read_only": 1
   },
   {

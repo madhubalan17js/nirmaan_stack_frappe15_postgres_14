@@ -67,9 +67,8 @@
   },
   {
    "fieldname": "status_changed_by",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Status Changed By",
-   "options": "User",
    "read_only": 1
   },
   {

@@ -27,10 +27,9 @@
   },
   {
    "fieldname": "asset_assigned_to",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Assigned To",
-   "options": "Nirmaan Users",
    "reqd": 1
   },
   {

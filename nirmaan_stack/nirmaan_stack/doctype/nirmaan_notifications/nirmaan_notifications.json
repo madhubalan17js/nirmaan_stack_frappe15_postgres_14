@@ -95,9 +95,8 @@
   },
   {
    "fieldname": "sender",
-   "fieldtype": "Link",
-   "label": "Sender",
-   "options": "Nirmaan Users"
+   "fieldtype": "Data",
+   "label": "Sender"
   },
   {
    "fieldname": "recipient_details",
@@ -106,9 +105,8 @@
   },
   {
    "fieldname": "recipient",
-   "fieldtype": "Link",
-   "label": "Recipient",
-   "options": "Nirmaan Users"
+   "fieldtype": "Data",
+   "label": "Recipient"
   },
   {
    "fieldname": "recipient_role",

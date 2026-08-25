@@ -86,9 +86,8 @@
   {
    "description": "The user who marked it done (empty while Pending).",
    "fieldname": "completed_by",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Completed By",
-   "options": "User",
    "read_only": 1
   },
   {

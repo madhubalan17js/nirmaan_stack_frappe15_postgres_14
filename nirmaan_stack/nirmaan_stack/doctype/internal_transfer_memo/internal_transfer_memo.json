@@ -134,16 +134,14 @@
   },
   {
    "fieldname": "requested_by",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Requested By",
-   "options": "User",
    "read_only": 1
   },
   {
    "fieldname": "approved_by",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Approved By",
-   "options": "User",
    "read_only": 1
   },
   {
@@ -163,9 +161,8 @@
   },
   {
    "fieldname": "dispatched_by",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Dispatched By",
-   "options": "User",
    "read_only": 1
   },
   {

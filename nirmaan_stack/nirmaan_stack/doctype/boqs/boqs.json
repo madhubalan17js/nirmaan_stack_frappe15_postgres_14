@@ -87,9 +87,8 @@
   },
   {
    "fieldname": "uploaded_by",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Uploaded By",
-   "options": "User",
    "read_only": 1
   },
   {

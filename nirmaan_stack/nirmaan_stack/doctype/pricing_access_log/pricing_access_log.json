@@ -20,10 +20,9 @@
   },
   {
    "fieldname": "user",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "User",
-   "options": "User"
+   "label": "User"
   },
   {
    "fieldname": "action",
