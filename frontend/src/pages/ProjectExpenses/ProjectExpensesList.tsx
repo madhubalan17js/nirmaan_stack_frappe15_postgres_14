@@ -23,7 +23,6 @@ import { CEO_HOLD_ROW_CLASSES } from "@/utils/ceoHoldRowStyles";
 // Types
 import { ProjectExpenses } from "@/types/NirmaanStack/ProjectExpenses";
 import { Vendors } from "@/types/NirmaanStack/Vendors";
-import { NirmaanUsers } from "@/types/NirmaanStack/NirmaanUsers";
 import { Projects } from "@/types/NirmaanStack/Projects";
 import { ExpenseType } from "@/types/NirmaanStack/ExpenseType";
 
@@ -53,6 +52,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useUserDirectory } from "@/hooks/useUserDirectory";
 
 interface ProjectExpensesListProps {
   projectId?: string; // Optional: To filter by a specific project
@@ -166,12 +166,9 @@ export const ProjectExpensesList: React.FC<ProjectExpensesListProps> = ({
       orderBy: { field: "vendor_name", order: "asc" },
       limit: 0,
     });
-  const { data: users, isLoading: usersLoading } =
-    useFrappeGetDocList<NirmaanUsers>("Nirmaan Users", {
-      fields: ["name", "full_name"],
-      orderBy: { field: "full_name", order: "asc" },
-      limit: 0,
-    });
+  // Resolves through Nirmaan Users -> User -> Deleted Document, so a row created by
+  // someone since offboarded still shows their name instead of a raw email.
+  const { users, isLoading: usersLoading } = useUserDirectory();
   const { data: expenseTypes, isLoading: expenseTypesLoading } =
     useFrappeGetDocList<ExpenseType>("Expense Type", {
       fields: ["name", "expense_name"],

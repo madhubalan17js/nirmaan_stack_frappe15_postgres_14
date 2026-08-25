@@ -28,7 +28,6 @@ import { useGstOptions } from "@/hooks/useGstOptions";
 // --- Types ---
 import { NirmaanAttachment } from "@/types/NirmaanStack/NirmaanAttachment";
 import { Vendors } from "@/types/NirmaanStack/Vendors";
-import { NirmaanUsers } from "@/types/NirmaanStack/NirmaanUsers";
 
 // --- Config ---
 import { SR_INVOICE_SEARCHABLE_FIELDS, SR_INVOICE_DATE_COLUMNS, SR_INVOICE_RECONCILIATION_STATUS_OPTIONS } from '../config/srInvoicesTable.config';
@@ -41,6 +40,7 @@ import {
     InvoiceRowActionsCell,
     InvoiceRowAdminActionDialogs,
 } from "../hooks/useInvoiceRowAdminActions";
+import { useUserDirectory } from "@/hooks/useUserDirectory";
 
 // --- Interfaces ---
 interface Projects {
@@ -136,10 +136,9 @@ export const SrInvoices: React.FC<SrInvoicesProps> = ({ vendorId, vendorName }) 
     }, 'Vendors');
 
     // --- Fetch all Nirmaan Users data ---
-    const { data: users, isLoading: usersLoading } = useFrappeGetDocList<NirmaanUsers>("Nirmaan Users", {
-        fields: ["name", "full_name"],
-        limit: 0,
-    }, 'NirmaanUsers');
+    // Resolves through Nirmaan Users -> User -> Deleted Document, so a row created by
+    // someone since offboarded still shows their name instead of a raw email.
+    const { users, isLoading: usersLoading } = useUserDirectory();
 
     const { gstOptions, isLoading: isGstLoading } = useGstOptions();
 

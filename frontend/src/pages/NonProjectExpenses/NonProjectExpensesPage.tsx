@@ -8,7 +8,6 @@ import memoize from "lodash/memoize";
 import {
   useFrappeDeleteDoc,
   useFrappeUpdateDoc,
-  useFrappeGetDocList,
 } from "frappe-react-sdk";
 import { useCounts } from "@/hooks/useCounts";
 import { useToast } from "@/components/ui/use-toast";
@@ -46,7 +45,6 @@ import { parse, formatISO, startOfDay, endOfDay } from "date-fns";
 
 // --- Types ---
 import { NonProjectExpenses as NonProjectExpensesType } from "@/types/NirmaanStack/NonProjectExpenses";
-import { NirmaanUsers } from "@/types/NirmaanStack/NirmaanUsers";
 // --- Config ---
 import {
   DEFAULT_NPE_FIELDS_TO_FETCH,
@@ -61,6 +59,7 @@ import { EditNonProjectExpense } from "./components/EditNonProjectExpense";
 import { UpdatePaymentDetailsDialog } from "./components/UpdatePaymentDetailsDialog";
 import { UpdateInvoiceDetailsDialog } from "./components/UpdateInvoiceDetailsDialog";
 import { NonProjectExpenseSummaryCard } from "./components/NonProjectExpenseSummaryCard";
+import { useUserDirectory } from "@/hooks/useUserDirectory";
 
 const DOCTYPE = "Non Project Expenses";
 
@@ -132,10 +131,9 @@ export const NonProjectExpensesPage: React.FC<NonProjectExpensesPageProps> = ({
   }, [defaultStatusTab]);
 
   // --- Users lookup for the "Created By" column ---
-  const { data: users } = useFrappeGetDocList<NirmaanUsers>("Nirmaan Users", {
-    fields: ["name", "full_name"],
-    limit: 0,
-  });
+  // Resolves through Nirmaan Users -> User -> Deleted Document, so a row created by
+  // someone since offboarded still shows their name instead of a raw email.
+  const { users } = useUserDirectory();
   const getUserName = useCallback(
     memoize(
       (id?: string) =>

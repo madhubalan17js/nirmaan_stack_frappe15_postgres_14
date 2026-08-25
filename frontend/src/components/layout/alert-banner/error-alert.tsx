@@ -8,11 +8,13 @@ import {
 
 interface ErrorAlertProps {
     error?: any;
+    /** Forwarded to the underlying Alert, for call sites that place it in a layout. */
+    className?: string;
 }
 
-export function AlertDestructive({ error }: ErrorAlertProps) {
+export function AlertDestructive({ error, className }: ErrorAlertProps) {
     return (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className={className}>
             <Terminal className="h-4 w-4" />
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>

@@ -2,6 +2,8 @@
 import frappe
 from frappe import _
 from frappe.utils import cint
+
+from nirmaan_stack.services import user_directory
 from nirmaan_stack.services.role_profiles import PROCUREMENT_PROFILES
 
 # Roles that require project-level filtering based on user permissions
@@ -177,16 +179,12 @@ def get_tds_request_list(
     
     data = frappe.db.sql(sql_query, values, as_dict=True)
     
-    # Lookup full_name for created_by (owner) from Nirmaan Users
+    # Lookup full_name for created_by (owner). Goes through the directory rather than
+    # `Nirmaan Users` alone: a request raised by someone since offboarded has no profile
+    # row, so that lookup returned nothing and the column fell back to a raw email.
+    # The directory also recovers hard-deleted accounts from their Deleted Document.
     owner_emails = list(set([row.get('created_by') for row in data if row.get('created_by')]))
-    owner_name_map = {}
-    if owner_emails:
-        users = frappe.get_all(
-            "Nirmaan Users",
-            filters={"name": ["in", owner_emails]},
-            fields=["name", "full_name"]
-        )
-        owner_name_map = {u['name']: u['full_name'] for u in users if u.get('full_name')}
+    owner_name_map = user_directory.get_user_names(owner_emails)
     
     # derived status for UI + add full_name
     for row in data:

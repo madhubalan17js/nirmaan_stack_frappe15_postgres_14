@@ -3,8 +3,8 @@ import { useMemo } from 'react';
 import { formatISO } from 'date-fns';
 import { Projects } from '@/types/NirmaanStack/Projects';
 import { Vendors } from '@/types/NirmaanStack/Vendors';
-import { NirmaanUsers } from '@/types/NirmaanStack/NirmaanUsers';
 import { NirmaanAttachment } from '@/types/NirmaanStack/NirmaanAttachment';
+import { useUserDirectory } from "@/hooks/useUserDirectory";
 
 // Reconciliation status type (matches invoices tab)
 // "na" = Not Applicable (for invoices that don't require 2B reconciliation)
@@ -126,10 +126,9 @@ export const useSR2BReconcileData = (options: UseSR2BReconcileDataOptions = {}):
     });
 
     // Fetch all users for name lookup
-    const { data: users, isLoading: usersLoading } = useFrappeGetDocList<NirmaanUsers>("Nirmaan Users", {
-        fields: ["name", "full_name"],
-        limit: 0,
-    });
+    // Resolves through Nirmaan Users -> User -> Deleted Document, so a row created by
+    // someone since offboarded still shows their name instead of a raw email.
+    const { users, isLoading: usersLoading } = useUserDirectory();
 
     // Fetch all attachments for URL lookup
     const { data: attachments, isLoading: attachmentsLoading } = useFrappeGetDocList<NirmaanAttachment>("Nirmaan Attachments", {

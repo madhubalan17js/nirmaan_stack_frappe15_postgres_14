@@ -13,6 +13,16 @@ const DOCUMENT_TYPES = {
   PROJECT: "Projects"
 };
 
+interface OffboardingAsset {
+  assignment: string;
+  asset: string;
+  asset_name: string;
+  asset_category: string | null;
+  serial_number: string | null;
+  condition: string | null;
+  assigned_on: string | null;
+}
+
 const TOAST_MESSAGES = {
   SUCCESS: "Success!",
   ERROR: "Error!",
@@ -78,15 +88,40 @@ export const useUserSubmitHandlers = (data: NirmaanUsers | undefined, permission
         throw new Error("User email is missing");
       }
 
+      // What does this person still HOLD? Asset assignments are Data now, so nothing
+      // in the database refuses the removal -- which makes this the only place anyone
+      // finds out a laptop was never handed back. It REPORTS, it does not prevent:
+      // blocking here would just reinstate, in the UI, the refusal that was
+      // deliberately removed from the schema.
+      const blockers = await call.get(
+        "nirmaan_stack.api.users.get_user_offboarding_blockers",
+        { email: data.email }
+      );
+      const held: OffboardingAsset[] = blockers?.message?.assets ?? [];
+
       await deleteDoc(DOCUMENT_TYPES.NIRMAAN_USERS, data.email);
       await mutate(DOCUMENT_TYPES.NIRMAAN_USERS);
 
-      showToast(
-        toast,
-        "success",
-        TOAST_MESSAGES.SUCCESS,
-        `User: ${data?.full_name} deleted successfully!`
-      );
+      if (held.length > 0) {
+        // Read BEFORE the delete, because the delete is what releases them -- the
+        // server unassigns every held asset in `Nirmaan Users.on_trash`. So this
+        // reports what was handed back, it does not ask anyone to go and do it.
+        const names = held.map((a) => a.asset_name).filter(Boolean);
+        showToast(
+          toast,
+          "success",
+          `${data?.full_name} removed — ${held.length} asset${held.length > 1 ? "s" : ""} returned to the pool`,
+          `${names.slice(0, 3).join(", ")}${names.length > 3 ? `, and ${names.length - 3} more` : ""}. ` +
+            `Now available to reassign from the Assets page.`
+        );
+      } else {
+        showToast(
+          toast,
+          "success",
+          TOAST_MESSAGES.SUCCESS,
+          `User: ${data?.full_name} deleted successfully!`
+        );
+      }
       toggleDeleteUserDialog()
       navigate("/users");
     } catch (error) {

@@ -52,7 +52,7 @@ import { LinkedInflowEntry } from "./config/projectInvoices.config";
 import { Projects } from "@/types/NirmaanStack/Projects";
 import { useDialogStore } from "@/zustand/useDialogStore"; // For managing edit dialog state
 import { Customers } from "@/types/NirmaanStack/Customers";
-import { NirmaanUsers } from "@/types/NirmaanStack/NirmaanUsers";
+import { useUserDirectory } from "@/hooks/useUserDirectory";
 
 interface AllProjectInvoicesProps {
   projectId?: string;
@@ -156,15 +156,9 @@ export const AllProjectInvoices: React.FC<AllProjectInvoicesProps> = ({
     );
 
   // --- (2) NEW: Fetch user data for name mapping and filtering ---
-  const { data: users, isLoading: isUsersLoading } =
-    useFrappeGetDocList<NirmaanUsers>(
-      "Nirmaan Users",
-      {
-        fields: ["name", "full_name"],
-        orderBy: { field: "full_name", order: "asc" },
-        limit: 0,
-      } // Fetch all users
-    );
+  // Resolves through Nirmaan Users -> User -> Deleted Document, so a row created by
+  // someone since offboarded still shows their name instead of a raw email.
+  const { users, isLoading: isUsersLoading } = useUserDirectory();
 
   const { gstOptions, isLoading: isGstLoading } = useGstOptions();
 

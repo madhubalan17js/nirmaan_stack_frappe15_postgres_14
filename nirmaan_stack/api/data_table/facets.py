@@ -5,6 +5,8 @@ from frappe.desk.reportview import execute as reportview_execute
 import re
 import traceback
 
+from nirmaan_stack.services import user_directory
+
 from .constants import LINK_FIELD_MAP, CHILD_TABLE_ITEM_SEARCH_MAP, JSON_ITEM_SEARCH_DOCTYPE_MAP
 from .utils import (
     _parse_filters_input, _process_filters_for_query,
@@ -346,7 +348,15 @@ def get_facet_values_impl(
             except Exception:
                 pass
         _values = [row.get("value") for row in results if row.get("value")]
-        if _target_doctype and _label_field and _values:
+        if _target_doctype == "User" and _values:
+            # `owner` / `modified_by` hold an email for an account that may have been
+            # DELETED, and a join against `tabUser` finds no row for one -- which is why
+            # the biggest option in a "Last Modified By" facet could render as a raw
+            # login id. The directory resolves live users AND recovers deleted ones from
+            # their Deleted Document tombstone. Same fallback as before: an email that
+            # resolves to nothing stays the email.
+            _label_map = user_directory.get_user_names(_values)
+        elif _target_doctype and _label_field and _values:
             try:
                 _rows = frappe.db.sql(
                     f"SELECT name, `{_label_field}` AS label FROM `tab{_target_doctype}` WHERE name IN %(names)s",
