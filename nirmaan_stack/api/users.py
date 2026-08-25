@@ -4,6 +4,8 @@ import frappe
 from frappe import _
 from frappe.model.rename_doc import rename_doc
 
+from nirmaan_stack.services import user_directory
+
 
 @frappe.whitelist()
 def create_user(
@@ -314,11 +316,16 @@ def rename_user_email(old_email: str, new_email: str):
 		# 9. Rename Nirmaan Users doctype (handles Link fields to Nirmaan Users automatically)
 		rename_doc("Nirmaan Users", old_email, new_email, force=True)
 
-		# 10. Update Data fields that don't auto-update (not Link fields)
-		frappe.db.sql("""
-			UPDATE "tabNirmaan User Permissions"
-			SET "user" = %s WHERE "user" = %s
-		""", (new_email, old_email))
+		# 10. Update Data fields that don't auto-update (not Link fields).
+		#     `rename_doc` walks Link fields only, so every field storing the user id as
+		#     TEXT is invisible to it. Since the 17 user-reference fields were converted
+		#     from Link to Data (so a deleted user's connections survive as data), that
+		#     set is large -- ~70k values -- and skipping it would silently leave all of
+		#     them pointing at the old address. The owning list is USER_ID_DATA_FIELDS.
+		renamed_refs = user_directory.rename_user_references(old_email, new_email)
+
+		# The directory caches names + the live/tombstone split, both keyed by email.
+		user_directory.clear_cache()
 
 		# 11. Force logout the renamed user by clearing their sessions
 		frappe.db.sql("""
@@ -330,10 +337,132 @@ def rename_user_email(old_email: str, new_email: str):
 		return {
 			"success": True,
 			"message": _("Email renamed from {0} to {1}").format(old_email, new_email),
-			"new_email": new_email
+			"new_email": new_email,
+			# Per-field counts of the Data-stored references repointed above, so a rename
+			# can be audited rather than assumed. A None means that field's table errored.
+			"renamed_references": renamed_refs,
 		}
 
 	except Exception as e:
 		frappe.db.rollback()
 		frappe.log_error("Email rename failed", frappe.get_traceback())
 		frappe.throw(_("Failed to rename email: {0}").format(str(e)))
+
+
+@frappe.whitelist()
+def get_user_directory(include_inactive: int = 1):
+    """Every user this site has ever had, resolvable by email — for name display.
+
+    Returns ``{"users": [{name, full_name, role_profile, is_active, source}, ...]}``.
+    ``name`` is the email, which is what `owner` / `modified_by` / `completed_by`
+    actually store, so the client can match on it directly.
+
+    This is deliberately the WHOLE directory in one call (~200 rows) rather than a
+    per-email lookup: a list page resolves a hundred owners with zero extra
+    requests, and the payload caches client-side like any other list.
+
+    ``source`` tells you where the name came from — ``profile`` (Nirmaan Users),
+    ``user`` (a User row with no profile), or ``deleted`` (recovered from the
+    Deleted Document tombstone, i.e. this person no longer exists on the site).
+
+    Pass ``include_inactive=0`` for a picker or assignee dropdown, which should
+    only ever offer people who still work here. Leave it at 1 for anything that
+    RESOLVES a historical id to a name — filtering there is what makes old records
+    show a raw email.
+    """
+    directory = user_directory.get_directory()
+
+    users = sorted(directory.values(), key=lambda u: (u.get("full_name") or "").lower())
+
+    if not int(include_inactive or 0):
+        users = [u for u in users if u.get("is_active")]
+
+    return {"users": users}
+
+
+@frappe.whitelist()
+def get_user_display_name(email: str):
+    """Display name for a single email. Never blank — falls back to the email itself.
+
+    For one-off lookups only. Resolving a list of rows? Call `get_user_directory`
+    once and match client-side instead of calling this per row.
+    """
+    return {"name": email, "full_name": user_directory.get_user_name(email)}
+
+
+@frappe.whitelist()
+def get_user_offboarding_blockers(email: str):
+    """What must be cleared before this person's profile can be removed.
+
+    The 17 historical user-reference fields are Data now, so a record of what someone
+    DID never blocks their removal. What still blocks is what they currently HOLD --
+    chiefly assets -- and that block is deliberate: a laptop does not become historical
+    when its holder leaves, so the delete refusal is the prompt to get it back.
+
+    Frappe's own refusal names the blocking row by id ("linked with Asset Management
+    0c68q6kf6g"), which tells nobody what to actually do. This returns the same
+    blockers with names attached, so the UI can say what is held and by which person.
+
+    Blockers come from `get_linked_docs` -- the SAME function `delete_doc` calls -- so
+    this can never disagree with the real refusal, and a Link field added to
+    `Nirmaan Users` in future shows up here with no change to this endpoint.
+
+    Returns ``{"can_offboard": bool, "assets": [...], "other": {doctype: count}}``.
+    """
+    from frappe.model.delete_doc import get_linked_docs
+
+    if not frappe.db.exists("Nirmaan Users", email):
+        frappe.throw(_("No Nirmaan Users profile for {0}").format(email))
+
+    # The link-field cache is per-request and keyed by doctype; clear it so a fieldtype
+    # change (Link -> Data) is never served from a stale entry.
+    frappe.flags.link_fields = {}
+    links = get_linked_docs(frappe.get_doc("Nirmaan Users", email))
+
+    # Assets are queried DIRECTLY, not read out of `links`. `asset_assigned_to` is a
+    # Data field now, so it is not a reference and the link check cannot see it -- and
+    # because nothing blocks the removal any more, this query is the ONLY remaining
+    # warning that someone still holds equipment. Reading it from `links` would return
+    # an empty list forever, silently.
+    asset_mgmt = frappe.get_all(
+        "Asset Management", filters={"asset_assigned_to": email}, pluck="name"
+    )
+
+    assets = []
+    if asset_mgmt:
+        for row in frappe.get_all(
+            "Asset Management",
+            filters={"name": ["in", asset_mgmt]},
+            fields=["name", "asset", "asset_assigned_on"],
+        ):
+            master = frappe.db.get_value(
+                "Asset Master", row.asset,
+                ["asset_name", "asset_category", "asset_serial_number", "asset_condition"],
+                as_dict=True,
+            ) or {}
+            assets.append({
+                "assignment": row.name,
+                "asset": row.asset,
+                # Fall back to the id rather than a blank: an asset whose master row is
+                # missing is exactly the case someone needs to see, not hide.
+                "asset_name": master.get("asset_name") or row.asset,
+                "asset_category": master.get("asset_category"),
+                "serial_number": master.get("asset_serial_number"),
+                "condition": master.get("asset_condition"),
+                "assigned_on": row.asset_assigned_on,
+            })
+
+    # `links` now holds only genuine Link references -- any future field pointing at
+    # `Nirmaan Users`. Assets are no longer among them, which is exactly why they are
+    # queried separately above and ORed into the verdict below.
+    other = {}
+    for link in links:
+        other[link["reference_doctype"]] = other.get(link["reference_doctype"], 0) + 1
+
+    return {
+        # Assets must be part of this or the answer is a lie: a Data field cannot block,
+        # so someone holding twelve laptops would otherwise report as clear to remove.
+        "can_offboard": not links and not assets,
+        "assets": sorted(assets, key=lambda a: (a["asset_name"] or "").lower()),
+        "other": other,
+    }

@@ -61,10 +61,14 @@ app_license = "mit"
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "nirmaan_stack.utils.jinja_methods",
-# 	"filters": "nirmaan_stack.utils.jinja_filters"
-# }
+# A print format showing "Created By" is rendering `owner`, which is a raw email.
+# `get_user_name` is the ONE resolver that also covers deleted users, so PDFs and
+# the screen agree on what a person is called.
+jinja = {
+	"methods": [
+		"nirmaan_stack.services.user_directory.get_user_name",
+	]
+}
 
 # Installation
 # ------------
@@ -126,16 +130,29 @@ app_license = "mit"
 
 doc_events = {
 	"User": {
-        "after_insert": "nirmaan_stack.nirmaan_stack.doctype.nirmaan_users.nirmaan_users.create_user_profile",
-		"on_update": "nirmaan_stack.nirmaan_stack.doctype.nirmaan_users.nirmaan_users.on_user_update",
+        "after_insert": [
+            "nirmaan_stack.nirmaan_stack.doctype.nirmaan_users.nirmaan_users.create_user_profile",
+            "nirmaan_stack.services.user_directory.clear_cache",
+        ],
+		"on_update": [
+			"nirmaan_stack.nirmaan_stack.doctype.nirmaan_users.nirmaan_users.on_user_update",
+			"nirmaan_stack.services.user_directory.clear_cache",
+		],
 		# "on_trash": "nirmaan_stack.nirmaan_stack.doctype.nirmaan_users.nirmaan_users.delete_user_profile"
 	},
     "Nirmaan Users": {
+        "on_update": "nirmaan_stack.services.user_directory.clear_cache",
         "on_trash": [
             "nirmaan_stack.integrations.controllers.nirmaan_users.on_trash",
             "nirmaan_stack.integrations.controllers.delete_doc_versions.generate_versions",
+            "nirmaan_stack.services.user_directory.clear_cache",
         ],
         "after_rename": "nirmaan_stack.integrations.controllers.nirmaan_users.after_rename",
+    },
+    # The moment a name stops being live and becomes recoverable-only. Fires for
+    # every doctype, so the handler guards on deleted_doctype before touching redis.
+    "Deleted Document": {
+        "after_insert": "nirmaan_stack.services.user_directory.on_deleted_document",
     },
     "User Permission": {
         "after_insert": [
@@ -411,7 +428,15 @@ scheduler_events = {
 # Ignore links to specified DocTypes when deleting documents
 # -----------------------------------------------------------
 
-# ignore_links_on_delete = ["Communication", "ToDo"]
+# `Workflow Action.completed_by` is a Link to User with ~23k rows, and it is the ONLY
+# thing blocking the deletion of any user who ever approved anything. It is Frappe core,
+# so it cannot be converted to a Data field the way our own 17 user-reference fields were
+# (Link is not in ALLOWED_FIELDTYPE_CHANGE). This hook merges into Frappe's own list.
+#
+# The rows are NOT deleted and `completed_by` is NOT cleared -- the email survives as a
+# string, so the approval trail stays readable and resolves to a name through
+# services/user_directory. Nothing in this app reads Workflow Action; it is Desk audit.
+ignore_links_on_delete = ["Workflow Action"]
 
 # Request Events
 # ----------------
