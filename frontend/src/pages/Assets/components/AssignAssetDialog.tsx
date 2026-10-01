@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useFrappeCreateDoc, useFrappeUpdateDoc, useFrappeGetDocList } from 'frappe-react-sdk';
+import { useFrappePostCall, useFrappeGetDocList } from 'frappe-react-sdk';
 import ReactSelect from 'react-select';
 import { format } from 'date-fns';
 
@@ -15,11 +15,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
+import { isStaleRecordError } from '@/utils/frappeErrors';
+import { useWriteErrorMessage } from '@/hooks/useStaleConflict';
 import { UserPlus, Calendar, CheckCircle2, Download, FileText } from 'lucide-react';
 
 import {
     ASSET_MASTER_DOCTYPE,
-    ASSET_MANAGEMENT_DOCTYPE,
     ASSET_CATEGORY_DOCTYPE,
 } from '../assets.constants';
 import { useAssetDataRefresh } from '../hooks/useAssetDataRefresh';
@@ -31,6 +32,8 @@ interface AssignAssetDialogProps {
     onOpenChange: (open: boolean) => void;
     assetId: string;
     assetName: string;
+    /** The asset's `modified` as the calling screen loaded it; guards the save against a newer change. */
+    assetModified?: string;
     onAssigned?: () => void;
 }
 
@@ -44,6 +47,7 @@ interface AssetProjectRef {
     name: string;
     project: string;
     asset_category: string;
+    modified?: string;
 }
 
 interface AssetCategoryTypeRow {
@@ -56,6 +60,7 @@ export const AssignAssetDialog: React.FC<AssignAssetDialogProps> = ({
     onOpenChange,
     assetId,
     assetName,
+    assetModified,
     onAssigned,
 }) => {
     const [selectedUser, setSelectedUser] = useState<string>('');
@@ -66,8 +71,9 @@ export const AssignAssetDialog: React.FC<AssignAssetDialogProps> = ({
     const [assignedUserName, setAssignedUserName] = useState<string>('');
 
     const { toast } = useToast();
-    const { createDoc } = useFrappeCreateDoc();
-    const { updateDoc } = useFrappeUpdateDoc();
+    const writeErrorMessage = useWriteErrorMessage();
+    // The asset's assignee and its assignment record are written in ONE server transaction.
+    const { call: assignAsset } = useFrappePostCall('nirmaan_stack.api.assets.assign_asset.assign_asset');
     const { refreshSummaryCards } = useAssetDataRefresh();
 
     // Fetch Nirmaan Users with role information
@@ -100,7 +106,7 @@ export const AssignAssetDialog: React.FC<AssignAssetDialogProps> = ({
     const { data: assetRows } = useFrappeGetDocList<AssetProjectRef>(
         ASSET_MASTER_DOCTYPE,
         {
-            fields: ['name', 'project', 'asset_category'],
+            fields: ['name', 'project', 'asset_category', 'modified'],
             filters: [['name', '=', assetId]],
             limit: 1,
         },
@@ -194,19 +200,16 @@ export const AssignAssetDialog: React.FC<AssignAssetDialogProps> = ({
         setIsSubmitting(true);
 
         try {
-            // Create Asset Management entry
-            await createDoc(ASSET_MANAGEMENT_DOCTYPE, {
+            // Sets the asset's assignee (and, for Project assets, the project -- City/State are
+            // fetch fields the server derives from it) AND creates the assignment record, in one
+            // transaction: both land or neither does. Carries the version the screen showed, so a
+            // change made meanwhile is refused, naming who made it.
+            await assignAsset({
                 asset: assetId,
-                asset_assigned_to: selectedUser,
-                asset_assigned_on: assignedDate,
-            });
-
-            // Update Asset Master with current assignee, and — for Project assets —
-            // the project this assignment is for. City/State are read-only fetch
-            // fields, so the server derives them from the project's address.
-            await updateDoc(ASSET_MASTER_DOCTYPE, assetId, {
-                current_assignee: selectedUser,
+                assigned_to: selectedUser,
+                assigned_on: assignedDate,
                 ...(isProjectAsset ? { project: selectedProject } : {}),
+                expected_modified: assetModified ?? assetRow?.modified,
             });
 
             // Get the assigned user's display name
@@ -221,9 +224,15 @@ export const AssignAssetDialog: React.FC<AssignAssetDialogProps> = ({
             console.error('Failed to assign asset:', error);
             toast({
                 title: 'Assignment Failed',
-                description: error?.message || 'An error occurred while assigning the asset.',
+                description: await writeErrorMessage(error, 'An error occurred while assigning the asset.', ASSET_MASTER_DOCTYPE, assetId),
                 variant: 'destructive',
             });
+            if (isStaleRecordError(error)) {
+                // Show the latest state rather than retrying on top of it.
+                onOpenChange(false);
+                refreshSummaryCards();
+                onAssigned?.();
+            }
         } finally {
             setIsSubmitting(false);
         }

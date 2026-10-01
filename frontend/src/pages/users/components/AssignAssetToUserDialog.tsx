@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useFrappeCreateDoc, useFrappeUpdateDoc, useFrappeFileUpload } from "frappe-react-sdk";
+import { useFrappeFileUpload, useFrappePostCall } from "frappe-react-sdk";
 import ReactSelect from "react-select";
 import { format } from "date-fns";
 import {
@@ -13,6 +13,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
+import { isStaleRecordError } from "@/utils/frappeErrors";
+import { useWriteErrorMessage } from "@/hooks/useStaleConflict";
 import { CustomAttachment } from "@/components/helpers/CustomAttachment";
 import { Package, Calendar, FileText, Briefcase, Laptop } from "lucide-react";
 import {
@@ -28,6 +30,7 @@ interface AssetMasterRecord {
   asset_serial_number: string;
   asset_value: number;
   current_assignee: string;
+  modified?: string;
 }
 
 interface AssetCategoryRecord {
@@ -71,8 +74,9 @@ export function AssignAssetToUserDialog({
   onAssigned,
 }: AssignAssetToUserDialogProps) {
   const { toast } = useToast();
-  const { createDoc } = useFrappeCreateDoc();
-  const { updateDoc } = useFrappeUpdateDoc();
+  const writeErrorMessage = useWriteErrorMessage();
+  // The asset's assignee and its assignment record are written in ONE server transaction.
+  const { call: assignAsset } = useFrappePostCall("nirmaan_stack.api.assets.assign_asset.assign_asset");
   const { upload } = useFrappeFileUpload();
 
   const [assetType, setAssetType] = useState<AssetTypeOption | "">("");
@@ -175,17 +179,15 @@ export function AssignAssetToUserDialog({
         fileUrl = uploadedFile.file_url;
       }
 
-      // Create Asset Management entry
-      await createDoc(ASSET_MANAGEMENT_DOCTYPE, {
+      // Sets the asset's assignee AND creates the assignment record in one transaction: both
+      // land or neither does. Carries the version the list showed, so a change made meanwhile
+      // is refused, naming who made it.
+      await assignAsset({
         asset: selectedAsset,
-        asset_assigned_to: userId,
-        asset_assigned_on: assignedDate,
-        asset_declaration_attachment: fileUrl || undefined,
-      });
-
-      // Update Asset Master with current assignee
-      await updateDoc(ASSET_MASTER_DOCTYPE, selectedAsset, {
-        current_assignee: userId,
+        assigned_to: userId,
+        assigned_on: assignedDate,
+        declaration_attachment: fileUrl || undefined,
+        expected_modified: unassignedAssets.find((a) => a.name === selectedAsset)?.modified,
       });
 
       const assetName = assetOptions.find((a) => a.value === selectedAsset)?.label || selectedAsset;
@@ -201,9 +203,14 @@ export function AssignAssetToUserDialog({
       console.error("Failed to assign asset:", error);
       toast({
         title: "Assignment Failed",
-        description: error?.message || "An error occurred while assigning the asset.",
+        description: await writeErrorMessage(error, "An error occurred while assigning the asset.", ASSET_MASTER_DOCTYPE, selectedAsset),
         variant: "destructive",
       });
+      if (isStaleRecordError(error)) {
+        // Show the latest state rather than retrying on top of it.
+        onOpenChange(false);
+        onAssigned?.();
+      }
     } finally {
       setIsSubmitting(false);
     }

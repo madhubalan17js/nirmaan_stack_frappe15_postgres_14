@@ -12,6 +12,8 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/components/ui/use-toast';
+import { isStaleRecordError, staleGuard } from '@/utils/frappeErrors';
+import { useWriteErrorMessage } from '@/hooks/useStaleConflict';
 import { UserMinus } from 'lucide-react';
 
 import {
@@ -27,6 +29,8 @@ interface UnassignAssetDialogProps {
     assetName: string;
     assigneeName: string;
     assetManagementId?: string;
+    /** The asset's `modified` as the calling screen loaded it; guards the save against a newer change. */
+    assetModified?: string;
     onUnassigned?: () => void;
 }
 
@@ -37,11 +41,13 @@ export const UnassignAssetDialog: React.FC<UnassignAssetDialogProps> = ({
     assetName,
     assigneeName,
     assetManagementId,
+    assetModified,
     onUnassigned,
 }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const { toast } = useToast();
+    const writeErrorMessage = useWriteErrorMessage();
     const { updateDoc } = useFrappeUpdateDoc();
     const { deleteDoc } = useFrappeDeleteDoc();
     const { refreshSummaryCards } = useAssetDataRefresh();
@@ -57,6 +63,7 @@ export const UnassignAssetDialog: React.FC<UnassignAssetDialogProps> = ({
             await updateDoc(ASSET_MASTER_DOCTYPE, assetId, {
                 current_assignee: '',
                 project: '',
+                ...staleGuard({ modified: assetModified }),
             });
 
             // Delete the Asset Management record if it exists
@@ -77,9 +84,15 @@ export const UnassignAssetDialog: React.FC<UnassignAssetDialogProps> = ({
             console.error('Failed to unassign asset:', error);
             toast({
                 title: 'Unassign Failed',
-                description: error?.message || 'An error occurred while unassigning the asset.',
+                description: await writeErrorMessage(error, 'An error occurred while unassigning the asset.', ASSET_MASTER_DOCTYPE, assetId),
                 variant: 'destructive',
             });
+            if (isStaleRecordError(error)) {
+                // Show the latest state rather than retrying on top of it.
+                onOpenChange(false);
+                refreshSummaryCards();
+                onUnassigned?.();
+            }
         } finally {
             setIsSubmitting(false);
         }

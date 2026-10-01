@@ -21,6 +21,8 @@ import SITEURL from "@/constants/siteURL";
 import { formatToRoundedIndianRupee } from "@/utils/FormatPrice";
 import { parseNumber } from "@/utils/parseNumber";
 import { cn } from "@/lib/utils";
+import { describeWriteError } from "@/utils/frappeErrors";
+import { followAttachment, takeLatest, StaleConflictBanner, useStaleConflict } from "@/hooks/useStaleConflict";
 
 interface UpdatePaymentDetailsDialogProps {
     isOpen: boolean;
@@ -42,6 +44,14 @@ type AttachmentUpdateAction = "keep" | "replace" | "remove";
 const ATTACHMENT_ACCEPTED_TYPES: AcceptedFileType[] = ["image/*", "application/pdf", "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"];
 
 
+/** The form as filled from a record -- on open, and to refresh untouched fields after a conflict. */
+const formFrom = (expense: NonProjectExpenses): PaymentFormState => ({
+    payment_date: expense.payment_date ? formatDateFns(new Date(expense.payment_date), "yyyy-MM-dd") : formatDateFns(new Date(), "yyyy-MM-dd"),
+    payment_ref: expense.payment_ref || "",
+    invoice_date: expense.invoice_date ? formatDateFns(new Date(expense.invoice_date), "yyyy-MM-dd") : "",
+    invoice_ref: expense.invoice_ref || "",
+});
+
 export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProps> = ({
     isOpen, setIsOpen, expense, onSuccess, markAsPaid = false
 }) => {
@@ -49,10 +59,19 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
     const { updateDoc, loading: updateLoading } = useFrappeUpdateDoc();
     const { upload, loading: uploadLoading } = useFrappeFileUpload();
 
+    // A save refused because someone else saved first keeps this dialog open with what was typed.
+    const stale = useStaleConflict({ doctype: "Non Project Expenses", record: expense, open: isOpen });
+
     const [formState, setFormState] = useState<PaymentFormState>({ payment_date: "", payment_ref: "", invoice_date: "", invoice_ref: "" });
     const [newAttachmentFile, setNewAttachmentFile] = useState<File | null>(null);
     // Optional: attach the invoice here if the expense doesn't already have one.
     const [newInvoiceFile, setNewInvoiceFile] = useState<File | null>(null);
+    // The invoice attachment as the latest version has it, once a conflict has re-read the record
+    // (undefined = the record the dialog opened with). Display and validation only: this dialog
+    // never writes the invoice attachment unless a new file is picked.
+    const [conflictInvoiceUrl, setConflictInvoiceUrl] = useState<string | null | undefined>(undefined);
+    const invoiceUrl = conflictInvoiceUrl !== undefined ? conflictInvoiceUrl : expense.invoice_attachment;
+    useEffect(() => { setConflictInvoiceUrl(undefined); }, [isOpen, expense.name]);
     const [existingAttachmentUrl, setExistingAttachmentUrl] = useState<string | undefined>(undefined);
     const [attachmentAction, setAttachmentAction] = useState<AttachmentUpdateAction>("keep");
     const [formErrors, setFormErrors] = useState<Partial<PaymentFormState>>({});
@@ -126,17 +145,14 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
     }, [upload, extractPaymentFields, toast, expense.name, expense.amount]);
 
     useEffect(() => {
+        // After a conflict the form holds the user's unsaved work -- a background refetch must not reset it.
+        if (stale.conflict) return;
         if (isOpen && expense) {
-            setFormState({
-                payment_date: expense.payment_date ? formatDateFns(new Date(expense.payment_date), "yyyy-MM-dd") : formatDateFns(new Date(), "yyyy-MM-dd"),
-                payment_ref: expense.payment_ref || "",
-                invoice_date: expense.invoice_date ? formatDateFns(new Date(expense.invoice_date), "yyyy-MM-dd") : "",
-                invoice_ref: expense.invoice_ref || "",
-            });
+            setFormState(formFrom(expense));
             setExistingAttachmentUrl(expense.payment_attachment);
             setNewAttachmentFile(null);
             setNewInvoiceFile(null);
-            setAttachmentAction(expense.payment_attachment ? "keep" : "remove"); // If no existing, default to allow new upload (effectively 'remove' existing null)
+            setAttachmentAction("keep"); // If no existing, default to allow new upload (effectively 'remove' existing null)
             setFormErrors({});
             setUploadedPaymentUrl(null);
             setAutofilledFields(new Set());
@@ -145,7 +161,7 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
             // Start on the upload step unless the expense already has a payment receipt.
             setPaymentStage(expense.payment_attachment ? "form" : "upload");
         }
-    }, [isOpen, expense]);
+    }, [isOpen, expense, stale.conflict]);
 
     const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -164,7 +180,7 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
         setUploadedPaymentUrl(null);
         setAutofilledFields(new Set());
         setAmountMismatch(null);
-        setAttachmentAction(file ? "replace" : (existingAttachmentUrl ? "keep" : "remove"));
+        setAttachmentAction(file ? "replace" : "keep");
         if (file) {
             if (isSupportedForAutofill(file)) {
                 runPaymentAutofill(file); // uploads + extracts, then advances to "form"
@@ -195,7 +211,7 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
         // Mark as Paid requires a payment reference.
         if (markAsPaid && !formState.payment_ref.trim()) errors.payment_ref = "Payment reference is required.";
         // An invoice attachment (existing or newly staged) requires an Invoice Ref.
-        const hasInvoiceAttachment = !!newInvoiceFile || !!expense.invoice_attachment;
+        const hasInvoiceAttachment = !!newInvoiceFile || !!invoiceUrl;
         if (hasInvoiceAttachment && !formState.invoice_ref.trim()) errors.invoice_ref = "Invoice reference is required when an invoice is attached.";
         setFormErrors(errors);
         // Mark as Paid requires a payment receipt (attachment).
@@ -248,12 +264,20 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
                 dataToUpdate.invoice_attachment = uploadedInvoice.file_url;
             }
 
-            await updateDoc("Non Project Expenses", expense.name, dataToUpdate);
+            await updateDoc("Non Project Expenses", expense.name, { ...dataToUpdate, ...stale.guard() });
             toast({ title: "Success", description: markAsPaid ? "Expense marked Paid." : "Payment details updated.", variant: "success" });
             onSuccess?.();
             setIsOpen(false);
         } catch (error: any) {
-            toast({ title: "Error", description: error.message || "Failed to update payment details.", variant: "destructive" });
+            // Someone else saved it first: stay open with what was typed; the banner names who and what changed.
+            if (await stale.handle(error, (latest, opened) => {
+                setFormState((f) => takeLatest(f, formFrom(opened as NonProjectExpenses), formFrom(latest as NonProjectExpenses)));
+                const att = followAttachment(opened.payment_attachment, latest.payment_attachment);
+                if (att) { setExistingAttachmentUrl(att.url); setAttachmentAction(att.action); setNewAttachmentFile(null); }
+                setConflictInvoiceUrl(latest.invoice_attachment || null);
+                if (followAttachment(opened.invoice_attachment, latest.invoice_attachment)) setNewInvoiceFile(null);
+            })) return;
+            toast({ title: "Error", description: describeWriteError(error, "Failed to update payment details."), variant: "destructive" });
         }
     };
 
@@ -262,7 +286,7 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
     // Existing saved attachment (shown unless a new file is staged or it's marked for removal).
     const effectiveExistingUrl = (attachmentAction === "keep" || attachmentAction === "replace") ? existingAttachmentUrl : undefined;
 
-    const hasInvoiceAttachmentNow = !!newInvoiceFile || !!expense.invoice_attachment;
+    const hasInvoiceAttachmentNow = !!newInvoiceFile || !!invoiceUrl;
     const isSubmitDisabled =
         isLoadingOverall ||
         paymentStage === "upload" ||
@@ -280,6 +304,8 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
                     <AlertDialogDescription>Expense ID: {expense.name}</AlertDialogDescription>
                     <Separator className="my-2" />
                 </AlertDialogHeader>
+
+                <StaleConflictBanner conflict={stale.conflict} />
 
                 {/* Expense details, so the accountant has full context before paying */}
                 <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1.5">
@@ -414,22 +440,22 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
                     <div className="grid grid-cols-4 items-start gap-3">
                         <Label className="text-right col-span-1 pt-2">Invoice Attachment</Label>
                         <div className="col-span-3 space-y-2">
-                            {expense.invoice_attachment && !newInvoiceFile && (
+                            {invoiceUrl && !newInvoiceFile && (
                                 <div className="flex items-center gap-2 p-2 bg-muted/60 rounded-md text-sm">
                                     <Download className="h-4 w-4 text-primary flex-shrink-0" />
                                     <a
-                                        href={SITEURL + expense.invoice_attachment}
+                                        href={SITEURL + invoiceUrl}
                                         target="_blank"
                                         rel="noreferrer"
                                         className="truncate hover:underline"
-                                        title={`View ${expense.invoice_attachment.split('/').pop()}`}
+                                        title={`View ${invoiceUrl.split('/').pop()}`}
                                     >
-                                        {expense.invoice_attachment.split('/').pop()}
+                                        {invoiceUrl.split('/').pop()}
                                     </a>
                                 </div>
                             )}
                             <CustomAttachment
-                                label={expense.invoice_attachment ? "Replace Invoice Attachment" : "Upload Invoice Attachment"}
+                                label={invoiceUrl ? "Replace Invoice Attachment" : "Upload Invoice Attachment"}
                                 selectedFile={newInvoiceFile}
                                 onFileSelect={setNewInvoiceFile}
                                 onError={handleAttachmentError}
@@ -443,7 +469,7 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
                     {isLoadingOverall ? <div className="flex justify-center w-full"><TailSpin color="#4f46e5" height={24} width={24} /></div> : (
                         <>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={handleSubmit} disabled={isSubmitDisabled}>{markAsPaid ? "Mark as Paid" : "Save Changes"}</AlertDialogAction>
+                            <AlertDialogAction onClick={(e) => { e.preventDefault(); handleSubmit(); }} disabled={isSubmitDisabled || stale.isSaveBlocked({ formState, newAttachmentFile, attachmentAction, newInvoiceFile })}>{stale.conflict ? "Save again" : markAsPaid ? "Mark as Paid" : "Save Changes"}</AlertDialogAction>
                         </>
                     )}
                 </AlertDialogFooter>

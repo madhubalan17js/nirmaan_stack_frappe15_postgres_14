@@ -14,7 +14,7 @@
  * Open state lives in `useDialogStore` because both dialogs read it from there.
  */
 import { useCallback, useEffect, useRef } from "react";
-import { useFrappeGetDoc } from "frappe-react-sdk";
+import { useFrappeGetCall } from "frappe-react-sdk";
 
 import { useDialogStore } from "@/zustand/useDialogStore";
 import { EditProjectExpenseDialog } from "@/pages/ProjectExpenses/components/EditProjectExpenseDialog";
@@ -26,7 +26,8 @@ interface QueueRowEditDialogProps {
   row: Pick<ApprovalQueueRow, "doctype" | "name"> | null;
   /** The dialog closed (saved or cancelled): the caller clears `row`. */
   onClose: () => void;
-  /** A save went through: the caller refreshes its table. */
+  /** A save went through -- or was refused as stale: the caller refreshes its table. The queue
+   *  lists "Project Payments", so the dialogs' own doctype refresh never reaches it. */
   onSaved: () => void;
 }
 
@@ -37,11 +38,15 @@ export const QueueRowEditDialog = ({ row, onClose, onSaved }: QueueRowEditDialog
   const isNonProjectExpense = doctype === "Non Project Expenses";
   const isExpense = isProjectExpense || isNonProjectExpense;
 
-  const { data: doc, mutate } = useFrappeGetDoc<any>(
-    doctype as string,
-    name as string,
+  // `frappe.client.get`, not the REST read: the REST read DROPS every empty field, so a field that
+  // was empty when the dialog opened would be missing from the version it compares against, and a
+  // change to it (e.g. an invoice added meanwhile) would never be named in the save-conflict banner.
+  const { data: docResponse, mutate } = useFrappeGetCall<{ message: any }>(
+    "frappe.client.get",
+    { doctype, name },
     isExpense && name ? undefined : null
   );
+  const doc = docResponse?.message;
   const docName: string | undefined = doc?.name;
 
   const {
@@ -83,7 +88,7 @@ export const QueueRowEditDialog = ({ row, onClose, onSaved }: QueueRowEditDialog
   }, [mutate, onSaved, isNonProjectExpense, setEditNonProjectExpenseDialog]);
 
   if (!name || !doc || docName !== name) return null;
-  if (isProjectExpense) return <EditProjectExpenseDialog expenseToEdit={doc} onSuccess={handleSaved} />;
-  if (isNonProjectExpense) return <EditNonProjectExpense expenseToEdit={doc} onSuccess={handleSaved} />;
+  if (isProjectExpense) return <EditProjectExpenseDialog expenseToEdit={doc} onSuccess={handleSaved} onStaleRefresh={onSaved} />;
+  if (isNonProjectExpense) return <EditNonProjectExpense expenseToEdit={doc} onSuccess={handleSaved} onStaleRefresh={onSaved} />;
   return null;
 };

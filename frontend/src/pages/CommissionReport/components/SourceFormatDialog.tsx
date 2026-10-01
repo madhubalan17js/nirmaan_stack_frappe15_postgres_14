@@ -20,6 +20,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
+import { StaleConflictBanner, useStaleConflict } from '@/hooks/useStaleConflict';
 
 import { useTaskMasterMutations } from '../data/useCommissionMutations';
 import { parseTemplate } from '../report-wizard/template-parser';
@@ -62,18 +63,21 @@ export const SourceFormatDialog: React.FC<Props> = ({ task, mutate }) => {
         warnings: [],
     });
     const [saving, setSaving] = useState(false);
+    const stale = useStaleConflict({ doctype: 'Commission Report Tasks', record: task as any, open });
 
     const { updateTaskMaster } = useTaskMasterMutations();
     const { toast } = useToast();
 
     // Reset on open with the latest server state.
     useEffect(() => {
+        // After a conflict the form holds the user's unsaved work -- the list refresh must not reset it.
+        if (stale.conflict) return;
         if (open) {
             setSourceText(task.source_format || '');
             setIsActive(task.is_active !== 0);
             setValidation({ status: 'unchecked', errors: [], warnings: [] });
         }
-    }, [open, task.source_format, task.is_active]);
+    }, [open, task.source_format, task.is_active, stale.conflict]);
 
     const isDirty = useMemo(() => {
         const initialActive = task.is_active !== 0;
@@ -123,6 +127,7 @@ export const SourceFormatDialog: React.FC<Props> = ({ task, mutate }) => {
             await updateTaskMaster(task.name, {
                 source_format: sourceText.trim() || null,
                 is_active: isActive ? 1 : 0,
+                ...stale.guard(),
             });
             await mutate();
             toast({
@@ -132,6 +137,13 @@ export const SourceFormatDialog: React.FC<Props> = ({ task, mutate }) => {
             });
             setOpen(false);
         } catch (e) {
+            // Someone else saved first: keep what this user changed, take theirs for the rest.
+            // Refilled with the latest saved version; the user enters again what they still need.
+            const handled = await stale.handle(e, (latest) => {
+                setSourceText(latest.source_format || '');
+                setIsActive(latest.is_active !== 0);
+            });
+            if (handled) return;
             toast({
                 title: 'Save failed',
                 description: (e as Error).message || 'Unknown error',
@@ -171,6 +183,7 @@ export const SourceFormatDialog: React.FC<Props> = ({ task, mutate }) => {
                         for the grammar.
                     </DialogDescription>
                 </DialogHeader>
+                <StaleConflictBanner conflict={stale.conflict} />
 
                 <div className="space-y-3">
                     <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2">
@@ -249,9 +262,9 @@ export const SourceFormatDialog: React.FC<Props> = ({ task, mutate }) => {
                     <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                         Cancel
                     </Button>
-                    <Button onClick={handleSave} disabled={saving || !isDirty}>
+                    <Button onClick={handleSave} disabled={saving || !isDirty || stale.isSaveBlocked({ sourceText, isActive })}>
                         {saving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-                        Save
+                        {stale.conflict ? 'Save again' : 'Save'}
                     </Button>
                 </DialogFooter>
             </DialogContent>

@@ -43,6 +43,8 @@ import { ExpenseType } from "@/types/NirmaanStack/ExpenseType";
 import { parseNumber } from "@/utils/parseNumber";
 import { useDialogStore } from "@/zustand/useDialogStore";
 import { queryKeys, getNonProjectExpenseTypeListOptions } from "@/config/queryKeys";
+import { describeWriteError } from "@/utils/frappeErrors";
+import { followAttachment, takeLatest, StaleConflictBanner, useStaleConflict } from "@/hooks/useStaleConflict";
 
 interface EditExpenseFormState {
     type: string;
@@ -61,9 +63,28 @@ type AttachmentUpdateAction = "keep" | "replace" | "remove";
 interface EditNonProjectExpenseProps {
     expenseToEdit: NonProjectExpensesType;
     onSuccess?: () => void; // To refetch list and close dialog (handled by parent)
+    /** A save was refused as stale: refresh a list that does not hold this doctype (the Payments queue). */
+    onStaleRefresh?: () => void;
 }
 
-export const EditNonProjectExpense: React.FC<EditNonProjectExpenseProps> = ({ expenseToEdit, onSuccess }) => {
+/** Whether the Invoice Details section starts ticked for a record: it has invoice data, or it is Paid. */
+const invoiceSectionOn = (e: NonProjectExpensesType): boolean =>
+    !!(e.invoice_date || e.invoice_ref || e.invoice_attachment) || isPaidExpense(e.status);
+
+/** The form as filled from a record -- on open, and to refresh untouched fields after a conflict. */
+const formFrom = (expenseToEdit: NonProjectExpensesType): EditExpenseFormState => ({
+    type: expenseToEdit.type || "",
+    description: expenseToEdit.description || "",
+    comment: expenseToEdit.comment || "",
+    amount: expenseToEdit.amount?.toString() || "",
+    // Prefill from the saved value, otherwise leave EMPTY (no auto-today).
+    payment_date: expenseToEdit.payment_date ? formatDateFns(new Date(expenseToEdit.payment_date), "yyyy-MM-dd") : "",
+    payment_ref: expenseToEdit.payment_ref || "",
+    invoice_date: expenseToEdit.invoice_date ? formatDateFns(new Date(expenseToEdit.invoice_date), "yyyy-MM-dd") : "",
+    invoice_ref: expenseToEdit.invoice_ref || "",
+});
+
+export const EditNonProjectExpense: React.FC<EditNonProjectExpenseProps> = ({ expenseToEdit, onSuccess, onStaleRefresh }) => {
     const { editNonProjectExpenseDialog, setEditNonProjectExpenseDialog } = useDialogStore();
     const { toast } = useToast();
 
@@ -75,7 +96,10 @@ export const EditNonProjectExpense: React.FC<EditNonProjectExpenseProps> = ({ ex
     // A Paid expense keeps its Amount, Payment Date and Payment Ref (owner, 2026-09-21): they are
     // read-only here and never sent. This screen is the ONLY lock -- the server leaves Paid
     // expenses editable so they can still be corrected in Desk.
-    const isPaid = isPaidExpense(expenseToEdit?.status);
+    // After a conflict the status is the LATEST version's: an expense someone marked Paid meanwhile
+    // must lock its amount here too (undefined = the record the dialog opened with).
+    const [conflictStatus, setConflictStatus] = useState<string | undefined>(undefined);
+    const isPaid = isPaidExpense(conflictStatus ?? expenseToEdit?.status);
 
     // Section toggles. The payment section is Paid-only and cannot be switched off there: unticking
     // it used to clear the payment fields while the expense stayed Paid.
@@ -99,41 +123,36 @@ export const EditNonProjectExpense: React.FC<EditNonProjectExpenseProps> = ({ ex
     const { updateDoc, loading: updateLoading } = useFrappeUpdateDoc(); // Changed
     const { upload, loading: uploadLoading } = useFrappeFileUpload();
 
+    // A save refused because someone else saved first keeps this dialog open with what was typed.
+    const stale = useStaleConflict({ doctype: "Non Project Expenses", record: expenseToEdit, open: editNonProjectExpenseDialog, onRefresh: onStaleRefresh });
+
     // Initialize form state when expenseToEdit or dialog visibility changes
     useEffect(() => {
+        // After a conflict the form holds the user's unsaved work -- a background refetch must not reset it.
+        if (stale.conflict) return;
         if (editNonProjectExpenseDialog && expenseToEdit) {
-            setFormState({
-                type: expenseToEdit.type || "",
-                description: expenseToEdit.description || "",
-                comment: expenseToEdit.comment || "",
-                amount: expenseToEdit.amount?.toString() || "",
-                // Prefill from the saved value, otherwise leave EMPTY (no auto-today).
-                payment_date: expenseToEdit.payment_date ? formatDateFns(new Date(expenseToEdit.payment_date), "yyyy-MM-dd") : "",
-                payment_ref: expenseToEdit.payment_ref || "",
-                invoice_date: expenseToEdit.invoice_date ? formatDateFns(new Date(expenseToEdit.invoice_date), "yyyy-MM-dd") : "",
-                invoice_ref: expenseToEdit.invoice_ref || "",
-            });
+            setFormState(formFrom(expenseToEdit));
             // Determine if sections should be initially open
             // Keyed on the STATUS: a Reconciliation Pending expense can already carry a payment ref
             // the bank import wrote, and that must neither open this section nor be cleared by it.
             const paid = isPaidExpense(expenseToEdit.status);
-            const hasInvoice = !!(expenseToEdit.invoice_date || expenseToEdit.invoice_ref || expenseToEdit.invoice_attachment);
             setRecordPaymentDetails(paid);
             // A Paid expense also requires its invoice, so keep both open.
-            setRecordInvoiceDetails(hasInvoice || paid);
+            setRecordInvoiceDetails(invoiceSectionOn(expenseToEdit));
 
             setExistingPaymentAttachmentUrl(expenseToEdit.payment_attachment);
             setExistingInvoiceAttachmentUrl(expenseToEdit.invoice_attachment);
 
-            setPaymentAttachmentAction(expenseToEdit.payment_attachment ? "keep" : "remove");
-            setInvoiceAttachmentAction(expenseToEdit.invoice_attachment ? "keep" : "remove");
+            setPaymentAttachmentAction("keep");
+            setInvoiceAttachmentAction("keep");
 
             setNewPaymentAttachmentFile(null);
             setNewInvoiceAttachmentFile(null);
             setFormErrors({});
             setExpenseTypePopoverOpen(false);
+            setConflictStatus(undefined);
         }
-    }, [editNonProjectExpenseDialog, expenseToEdit]);
+    }, [editNonProjectExpenseDialog, expenseToEdit, stale.conflict]);
 
 
     const expenseTypeFetchOptions = useMemo(() => getNonProjectExpenseTypeListOptions(), []);
@@ -181,7 +200,7 @@ export const EditNonProjectExpense: React.FC<EditNonProjectExpenseProps> = ({ ex
     // Attachment Handlers (similar to UpdatePayment/InvoiceDetailsDialog)
     const handleNewPaymentFileSelected = (file: File | null) => {
         setNewPaymentAttachmentFile(file);
-        setPaymentAttachmentAction(file ? "replace" : (existingPaymentAttachmentUrl ? "keep" : "remove"));
+        setPaymentAttachmentAction(file ? "replace" : "keep");
     };
     const handleRemoveExistingPaymentAttachment = () => {
         setNewPaymentAttachmentFile(null);
@@ -189,7 +208,7 @@ export const EditNonProjectExpense: React.FC<EditNonProjectExpenseProps> = ({ ex
     };
     const handleNewInvoiceFileSelected = (file: File | null) => {
         setNewInvoiceAttachmentFile(file);
-        setInvoiceAttachmentAction(file ? "replace" : (existingInvoiceAttachmentUrl ? "keep" : "remove"));
+        setInvoiceAttachmentAction(file ? "replace" : "keep");
     };
     const handleRemoveExistingInvoiceAttachment = () => {
         setNewInvoiceAttachmentFile(null);
@@ -238,15 +257,29 @@ export const EditNonProjectExpense: React.FC<EditNonProjectExpenseProps> = ({ ex
         }
 
         try {
-            await updateDoc("Non Project Expenses", expenseToEdit.name, dataToUpdate);
+            await updateDoc("Non Project Expenses", expenseToEdit.name, { ...dataToUpdate, ...stale.guard() });
             toast({ title: "Success!", description: "Non-project expense updated successfully!", variant: "success" });
             onSuccess?.(); // This will refetch and close dialog (from parent)
         } catch (error: any) {
+            // Someone else saved it first: stay open with what was typed; the banner names who and what changed.
+            if (await stale.handle(error, (latest, opened) => {
+                setFormState((f) => takeLatest(f, formFrom(opened as NonProjectExpensesType), formFrom(latest as NonProjectExpensesType)));
+                const pay = followAttachment(opened.payment_attachment, latest.payment_attachment);
+                if (pay) { setExistingPaymentAttachmentUrl(pay.url); setPaymentAttachmentAction(pay.action); setNewPaymentAttachmentFile(null); }
+                const inv = followAttachment(opened.invoice_attachment, latest.invoice_attachment);
+                if (inv) { setExistingInvoiceAttachmentUrl(inv.url); setInvoiceAttachmentAction(inv.action); setNewInvoiceAttachmentFile(null); }
+                // The Invoice Details box decides whether the save CLEARS every invoice field, so it
+                // follows the latest version too -- or an invoice the other person added is wiped.
+                setRecordInvoiceDetails(invoiceSectionOn(latest as NonProjectExpensesType));
+                // Paid follows the latest version: the payment section and the amount lock come with it.
+                setConflictStatus(latest.status);
+                setRecordPaymentDetails(isPaidExpense(latest.status));
+            })) return;
             console.error("Error updating non-project expense:", error);
-            toast({ title: "Failed!", description: error.message || "Failed to update expense.", variant: "destructive" });
+            toast({ title: "Failed!", description: describeWriteError(error, "Failed to update expense."), variant: "destructive" });
         }
     }, [
-        updateDoc, expenseToEdit.name, formState, validateForm, toast, onSuccess, upload, isPaid,
+        updateDoc, expenseToEdit.name, stale, formState, validateForm, toast, onSuccess, upload, isPaid,
         recordPaymentDetails, paymentAttachmentAction, newPaymentAttachmentFile,
         recordInvoiceDetails, invoiceAttachmentAction, newInvoiceAttachmentFile
     ]);
@@ -336,6 +369,7 @@ export const EditNonProjectExpense: React.FC<EditNonProjectExpenseProps> = ({ ex
                     <Separator className="my-3" />
                 </AlertDialogHeader>
                 <div className="space-y-3 py-1 max-h-[70vh] overflow-y-auto pr-2">
+                    <StaleConflictBanner conflict={stale.conflict} />
                     {/* Core Details: Type, Description, Amount - Similar to NewNonProjectExpense */}
                     <div className="grid grid-cols-4 items-center gap-3">
                         <Label htmlFor="type_edit_npe_trigger" className="text-right col-span-1">Type <sup className="text-destructive">*</sup></Label>
@@ -416,7 +450,7 @@ export const EditNonProjectExpense: React.FC<EditNonProjectExpenseProps> = ({ ex
                             <div className="grid grid-cols-4 items-center gap-3"> {/* Date */}
                                 <Label htmlFor="invoice_date_edit_npe" className="text-right col-span-1">Invoice Date <sup className="text-destructive">*</sup></Label>
                                 <Input id="invoice_date_edit_npe" name="invoice_date" type="date" value={formState.invoice_date} onChange={handleInputChange} max={formatDateFns(new Date(), "yyyy-MM-dd")} className="col-span-3" disabled={isLoadingOverall} />
-                                {formErrors.invoice_date && <p className="col-span-3 col-start-2 text-xs text-destructive mt-1">{formErrors.invoice_date}</p>}
+                                {(!formState.invoice_date || formErrors.invoice_date) && <p className="col-span-3 col-start-2 text-xs text-destructive mt-1">{formErrors.invoice_date || "Invoice Date is required."}</p>}
                             </div>
                             <div className="grid grid-cols-4 items-center gap-3"> {/* Ref */}
                                 <Label htmlFor="invoice_ref_edit_npe" className="text-right col-span-1">Invoice Ref{editHasInvoiceAttachment && <sup className="text-destructive"> *</sup>}</Label>
@@ -433,7 +467,7 @@ export const EditNonProjectExpense: React.FC<EditNonProjectExpenseProps> = ({ ex
                     ) : (
                         <>
                             <AlertDialogCancel asChild><Button variant="outline">Cancel</Button></AlertDialogCancel>
-                            <AlertDialogAction onClick={handleSubmit} disabled={isSubmitDisabled}>Save Changes</AlertDialogAction>
+                            <AlertDialogAction onClick={(e) => { e.preventDefault(); handleSubmit(); }} disabled={isSubmitDisabled || stale.isSaveBlocked({ formState, newPaymentAttachmentFile, newInvoiceAttachmentFile, paymentAttachmentAction, invoiceAttachmentAction, recordInvoiceDetails })}>{stale.conflict ? "Save again" : "Save Changes"}</AlertDialogAction>
                         </>
                     )}
                 </AlertDialogFooter>

@@ -16,6 +16,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TailSpin } from "react-loader-spinner";
 import { useToast } from "@/components/ui/use-toast";
+import { isStaleRecordError, staleGuard } from "@/utils/frappeErrors";
+import { useWriteErrorMessage } from "@/hooks/useStaleConflict";
 import { NirmaanUsers } from "@/types/NirmaanStack/NirmaanUsers";
 import { CustomAttachment } from "@/components/helpers/CustomAttachment";
 import { formatDate } from "@/utils/FormatDate";
@@ -59,6 +61,7 @@ interface AssetMasterRecord {
   asset_serial_number: string;
   asset_value: number;
   current_assignee: string;
+  modified?: string;
 }
 
 interface AssetCategoryRecord {
@@ -207,6 +210,7 @@ export function UserAssetsTab({
   onMutate,
 }: UserAssetsTabProps) {
   const { toast } = useToast();
+  const writeErrorMessage = useWriteErrorMessage();
   const { updateDoc } = useFrappeUpdateDoc();
   const { deleteDoc } = useFrappeDeleteDoc();
   const { upload } = useFrappeFileUpload();
@@ -280,6 +284,7 @@ export function UserAssetsTab({
       // Clear current_assignee in Asset Master
       await updateDoc(ASSET_MASTER_DOCTYPE, selectedAssignment.asset, {
         current_assignee: "",
+        ...staleGuard(getAssetDetails(selectedAssignment.asset)),
       });
 
       // Delete the Asset Management record
@@ -297,9 +302,15 @@ export function UserAssetsTab({
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error?.message || "Failed to unassign asset.",
+        description: await writeErrorMessage(error, "Failed to unassign asset.", ASSET_MASTER_DOCTYPE, selectedAssignment.asset),
         variant: "destructive",
       });
+      if (isStaleRecordError(error)) {
+        // Show the latest state rather than retrying on top of it.
+        setUnassignDialogOpen(false);
+        setSelectedAssignment(null);
+        onMutate();
+      }
     } finally {
       setIsUnassigning(false);
     }

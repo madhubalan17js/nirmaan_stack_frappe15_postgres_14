@@ -43,6 +43,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useFrappeCreateDoc, useFrappeDeleteDoc, useFrappeGetDocList, useFrappePostCall, useFrappeUpdateDoc } from "frappe-react-sdk";
+import { takeLatest, StaleConflictBanner, useStaleConflict } from "@/hooks/useStaleConflict";
 
 // --- Types ---
 export interface DesignTrackerCategory {
@@ -94,7 +95,7 @@ export const DesignPackagesMaster: React.FC = () => {
     mutate: mutateCategories
   } = useFrappeGetDocList<DesignTrackerCategory>(
     "Design Tracker Category",
-    { fields: ["name", "category_name", "work_package"], limit: 0, orderBy: { field: "creation", order: "asc" } }
+    { fields: ["name", "category_name", "work_package", "modified"], limit: 0, orderBy: { field: "creation", order: "asc" } }
   );
 
   // 2. Fetch Tasks
@@ -105,7 +106,7 @@ export const DesignPackagesMaster: React.FC = () => {
     mutate: mutateTasks
   } = useFrappeGetDocList<DesignTrackerTask>(
     "Design Tracker Tasks",
-    { fields: ["name", "task_name", "category_link", "deadline_offset"], limit: 0, orderBy: { field: "creation", order: "asc" } }
+    { fields: ["name", "task_name", "category_link", "deadline_offset", "modified"], limit: 0, orderBy: { field: "creation", order: "asc" } }
   );
 
   // 3. Fetch Work Packages for dropdown
@@ -322,12 +323,18 @@ interface EditCategoryDialogProps {
   workPackages: WorkPackage[];
 }
 
+const categoryFormFrom = (c: any): CategoryFormValues => ({
+  category_name: c?.category_name,
+  work_package_link: c?.work_package || "",
+});
+
 const EditCategoryDialog: React.FC<EditCategoryDialogProps> = ({ category, mutate, mutateTasks, workPackages }) => {
   const [open, setOpen] = useState(false);
   const { call: renameDoc, loading: renameLoading } = useFrappePostCall(
     'frappe.model.rename_doc.update_document_title'
   );
   const { updateDoc, loading: updateLoading } = useFrappeUpdateDoc();
+  const stale = useStaleConflict({ doctype: "Design Tracker Category", record: category, open });
 
   const form = useForm<CategoryFormValues>({
     resolver: zodResolver(categoryFormSchema),
@@ -339,13 +346,15 @@ const EditCategoryDialog: React.FC<EditCategoryDialogProps> = ({ category, mutat
 
   // Reset form when dialog opens with current values
   React.useEffect(() => {
+    // After a conflict the form holds the user's unsaved work -- the list refresh must not reset it.
+    if (stale.conflict) return;
     if (open) {
       form.reset({
         category_name: category.category_name,
         work_package_link: category.work_package || "",
       });
     }
-  }, [open, category, form]);
+  }, [open, category, form, stale.conflict]);
 
   const onSubmit = async (values: CategoryFormValues) => {
     const nameChanged = values.category_name !== category.category_name;
@@ -374,8 +383,10 @@ const EditCategoryDialog: React.FC<EditCategoryDialogProps> = ({ category, mutat
       // Handle work package update (after rename if name changed)
       if (packageChanged) {
         const docName = nameChanged ? values.category_name : category.name;
+        // A rename moves the record, so the version check applies only to an in-place save.
         await updateDoc("Design Tracker Category", docName, {
           work_package: values.work_package_link || null,
+          ...(nameChanged ? {} : stale.guard()),
         });
       }
 
@@ -385,6 +396,7 @@ const EditCategoryDialog: React.FC<EditCategoryDialogProps> = ({ category, mutat
       setOpen(false);
     } catch (error: any) {
       console.error("Failed to update category:", error);
+      if (await stale.handle(error, (latest, opened) => form.reset(takeLatest(form.getValues(), categoryFormFrom(opened), categoryFormFrom(latest))))) return;
       toast({ title: "Error", description: `Failed to update category: ${error.message || 'Unknown error'}`, variant: "destructive" });
     }
   };
@@ -411,6 +423,7 @@ const EditCategoryDialog: React.FC<EditCategoryDialogProps> = ({ category, mutat
             Update the category name or change its linked work package.
           </DialogDescription>
         </DialogHeader>
+        <StaleConflictBanner conflict={stale.conflict} />
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
@@ -473,10 +486,10 @@ const EditCategoryDialog: React.FC<EditCategoryDialogProps> = ({ category, mutat
               </Button>
               <Button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || stale.isSaveBlocked(form.watch())}
                 className="bg-slate-900 hover:bg-slate-800 text-white"
               >
-                {isLoading ? <TailSpin height={16} width={16} color="white" /> : "Save"}
+                {isLoading ? <TailSpin height={16} width={16} color="white" /> : stale.conflict ? "Save again" : "Save"}
               </Button>
             </div>
           </form>
@@ -613,24 +626,37 @@ interface EditTaskDialogProps {
   mutate: () => Promise<any>;
 }
 
+const taskFormFrom = (t: any): TaskFormValues => ({ task_name: t?.task_name, deadline_offset: t?.deadline_offset || 0 });
+
 const EditTaskDialog: React.FC<EditTaskDialogProps> = ({ task, mutate }) => {
   const [open, setOpen] = useState(false);
   const { updateDoc, loading } = useFrappeUpdateDoc();
+  const stale = useStaleConflict({ doctype: "Design Tracker Tasks", record: task, open });
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(taskFormSchema),
-    defaultValues: { task_name: task.task_name, deadline_offset: task.deadline_offset || 0 },
+    defaultValues: taskFormFrom(task),
   });
+
+  // Fill from the task as it is now each time the dialog opens, so the form and the
+  // version sent with the save always belong together.
+  React.useEffect(() => {
+    // After a conflict the form holds the user's unsaved work -- the list refresh must not reset it.
+    if (stale.conflict) return;
+    if (open) form.reset(taskFormFrom(task));
+  }, [open, task, form, stale.conflict]);
 
   const onSubmit = async (values: TaskFormValues) => {
     try {
       await updateDoc("Design Tracker Tasks", task.name, {
         task_name: values.task_name,
-        deadline_offset: values.deadline_offset
+        deadline_offset: values.deadline_offset,
+        ...stale.guard(),
       });
       toast({ title: "Success", description: "Task updated.", variant: "success" });
       await mutate();
       setOpen(false);
     } catch (error: any) {
+      if (await stale.handle(error, (latest, opened) => form.reset(takeLatest(form.getValues(), taskFormFrom(opened), taskFormFrom(latest))))) return;
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   };
@@ -652,6 +678,7 @@ const EditTaskDialog: React.FC<EditTaskDialogProps> = ({ task, mutate }) => {
             Edit Task
           </DialogTitle>
         </DialogHeader>
+        <StaleConflictBanner conflict={stale.conflict} />
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
@@ -703,10 +730,10 @@ const EditTaskDialog: React.FC<EditTaskDialogProps> = ({ task, mutate }) => {
               </Button>
               <Button
                 type="submit"
-                disabled={loading}
+                disabled={loading || stale.isSaveBlocked(form.watch())}
                 className="bg-slate-900 hover:bg-slate-800 text-white"
               >
-                {loading ? <TailSpin height={16} width={16} color="white" /> : "Save"}
+                {loading ? <TailSpin height={16} width={16} color="white" /> : stale.conflict ? "Save again" : "Save"}
               </Button>
             </div>
           </form>

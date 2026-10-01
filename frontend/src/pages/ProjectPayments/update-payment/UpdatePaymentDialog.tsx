@@ -22,6 +22,8 @@ import { DOC_TYPES } from "../approve-payments/constants";
 import { useOrderPayments } from "@/hooks/useOrderPayments";
 import { useOrderTotals } from "@/hooks/useOrderTotals";
 import { invalidateSidebarCounts } from "@/hooks/useSidebarCounts";
+import { useWriteErrorMessage } from "@/hooks/useStaleConflict";
+import { isStaleRecordError } from "@/utils/frappeErrors";
 
 /* ---------- tiny sub-component for label/value rows --------------- */
 const Row = ({ label, val, labelClass, valClass }: { label: string; val: string | number, labelClass?: string, valClass?: string }) => (
@@ -43,6 +45,8 @@ export interface ProjectPaymentUpdateFields {
         status        : string;
         /** A cheque payment's number: the reference its reconciliation starts from. */
         cheque_no    ?: string;
+        /** The version the row was loaded at: a fulfil is refused if the payment changed since. */
+        modified     ?: string;
     }
 
 /* ---------- exported dialog --------------------------------------- */
@@ -103,6 +107,7 @@ export default function UpdatePaymentRequestDialog({
   }, [open, mode, payment.name, payment.cheque_no]);
 
   const { trigger, isMutating } = useUpdatePaymentRequest();
+  const writeErrorMessage = useWriteErrorMessage();
   const { upload, loading: uploadLoading } = useFrappeFileUpload();
   const { call: extractPaymentFields } = useFrappePostCall(
     "nirmaan_stack.api.payment_autofill.extract_payment_fields"
@@ -237,13 +242,25 @@ export default function UpdatePaymentRequestDialog({
         utr,
         pay_date : payDate,
         status: payment?.status,
-        file_url   : uploadedFile ? uploadedFile.file_url : undefined
+        file_url   : uploadedFile ? uploadedFile.file_url : undefined,
+        expected_modified: payment.modified,
       };
       await trigger(payload);
       toast({ title: "Success", description: "Payment fulfilled", variant: "success" });
       invalidateSidebarCounts();
       onSuccess(); toggle(); reset();
     } catch (e: any) {
+      // Someone changed the payment after this screen loaded it: say who, then close and reload so
+      // the accountant pays against the current amount.
+      if (isStaleRecordError(e)) {
+        toast({
+          title: "Payment changed",
+          description: await writeErrorMessage(e, "Failed", DOC_TYPES.PROJECT_PAYMENTS, payment.name),
+          variant: "destructive",
+        });
+        onSuccess(); toggle(); reset();
+        return;
+      }
       // const msg = e?.message || "Failed";
 
       // // friendly duplicate UTR toast

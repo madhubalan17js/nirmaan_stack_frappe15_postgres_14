@@ -7,6 +7,8 @@ export type FulfilPayload = {
   utr      : string;
   pay_date?: string;                      // yyyy-mm-dd
   file_url?    : string;
+  /** The payment's `modified` as the screen loaded it; the server refuses the fulfil if it moved. */
+  expected_modified?: string;
 };
 
 export type DeletePayload = { action:"delete"; name:string };
