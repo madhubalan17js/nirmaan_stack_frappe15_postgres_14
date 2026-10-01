@@ -83,6 +83,12 @@ export const CustomAttachment = React.forwardRef<
     if (inputRef.current) inputRef.current.value = '';
   }, [onFileSelect]);
 
+  // The parent cleared the file (e.g. a save conflict dropped the user's pick): clear the input
+  // too, or picking the SAME file again fires no change event and the pick is silently ignored.
+  useEffect(() => {
+    if (!selectedFile && inputRef.current) inputRef.current.value = '';
+  }, [selectedFile]);
+
   // Cleanup preview URL
   useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview);
