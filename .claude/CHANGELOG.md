@@ -4,6 +4,105 @@ Changes made by AI coding assistants (Claude Code / Gemini).
 
 ---
 
+## 2026-10-01: Concurrent edit — review round (10 findings) + owner's conflict rules
+
+**Summary:** Fixes the manager's 10 review findings on `feature/concurrent-edit-overwrite` (8 were
+reproduced first, all 8 now pass) and applies the owner's rules for what a user sees after a
+conflict. Full reference: `.claude/context/domain/concurrent-edit.md` — **read "On hold and future
+goals" before planning more work here.**
+
+### What changed
+
+- **After a conflict the LATEST saved data wins, every field** (`takeLatest`, replaces `keepTyped`);
+  the attachment always shows the latest file and the user's pick is dropped (`followAttachment`);
+  `CustomAttachment` lets the same file be picked again.
+- **"Save again" is disabled until something changes** (`isSaveBlocked`, all 22 Save again buttons).
+- **Short banner:** "Updated by X at T, after you opened it." / "Changed: <field names>" / "The form
+  now shows the latest. Make your changes again to save." — names only the last saver.
+- **Same-second saves** (PostgreSQL `SerializationFailure`, HTTP 500) get the banner, not "Failed!".
+- **The latest record is read with `frappe.client.get`** (the REST read drops null fields), in the
+  hook and in `QueueRowEditDialog`; a second conflict compares against the first one's latest
+  version (moving baseline); a failed latest-version read can no longer leave Save again refused
+  forever (the endpoint returns the current `modified`).
+- **Server:** helpers moved to `services/concurrent_edit.py`, endpoint to
+  `api/concurrent_edit/last_change.py` (now returns `by` / `at` / `self`); asset assign is one
+  transaction (`api/assets/assign_asset`); payment fulfil is version-checked
+  (`_lock_unchanged_payment`); one TDS lock order, challans then deductions
+  (`lock_challans_then_deductions`, fixes a real deadlock); bulk L1 approve re-checks the approval
+  level under the lock (`target_for_amount`, waiting for owner sign-off).
+- **Lists behind a dialog re-fetch on a refusal** across mixed-doctype screens (Approvals queue).
+
+### On hold / future goals (owner)
+
+- **H1 live updates for other viewers (D2–D4)** — future goal, app-wide SDK `socket.off` fix.
+- **H2 stale actions after a status change (D6)** — business rule, owner decides.
+- **H3 bulk approve level re-check** — built, waiting for sign-off.
+- Every one must pass a two-browser **real-time** check before it is called done.
+
+### Verified
+
+vitest 4,559 pass (`useStaleConflict.test.ts` 34); 0 new type errors on changed lines; per-doctype
+server regression 57 / 0 (rolled back); two-browser live tests for latest-wins, attachments, blocked
+Save again, the short banner and same-second saves.
+
+---
+
+## 2026-09-29: Concurrent edit — refuse a save made on an out-of-date copy
+
+**Summary:** Stops "last save wins" silent overwrites on small records without child tables. A screen
+sends the `modified` it loaded; Frappe's own `check_if_latest` (row lock) refuses the save with
+`TimestampMismatchError` if the record changed since. No schema change, no migration; sending no
+`modified` keeps the old behaviour. Branch `feature/concurrent-edit-overwrite`. Full reference:
+`.claude/context/domain/concurrent-edit.md` — **read its "Known gaps" section before testing.**
+
+### What was built
+
+- **Shared pieces (`d632131de`).** `utils/frappeErrors.ts` (`staleGuard`, `isStaleRecordError`,
+  `writeErrorMessage`), `hooks/useStaleConflict.tsx` (hook, `keepTyped`, `describeChanges`,
+  `StaleConflictBanner`), `api/last_change.py` (`get_stale_message` / `stale_message`: "<Name> changed
+  this record at <time>…", or "You already changed this record … in another tab or window").
+- **Approvals (`11fcb5b43`).** Bulk lead / CEO approve for payments and expenses take
+  `expected_modified` and refuse a changed row on its own under its row lock; the expense L1 tier is
+  read under the lock. `ceo_approve_payment` checks the version and now refuses a CEO Hold project on
+  the server. Single approve / reject and Mark as Paid send the row's version.
+- **TDS challan (`5e3b80a2f`).** `pay_tds._apply` locks the deduction rows (sorted, FOR UPDATE) after
+  the challan lock.
+- **Expenses (`3a383b07f`), inflows + invoices (`498d847d5`), assets (`26f33da70`), PR tags + Help
+  (`137a62f8a`), package settings tabs (`5781700f9`).** Edit dialogs show the banner and "Save again";
+  one-click actions toast and reload. Assign asset updates Asset Master before creating Asset
+  Management. Product category is saved before its makes. Saves that rename skip the check.
+- **Products.** The Edit Product dialog (product page, Products list, TDS Repository items tab) sends
+  the version; the Products list loads `modified` (3,537 rows before/after, DIFF 0).
+- **Table re-fetch after a refusal.** `useStaleConflict.handle` re-fetches the lists behind the
+  dialog: `useServerDataTable` lists via `RECORD_CHANGED_EVENT`, SWR entries whose key names the
+  doctype, and an `onRefresh` for the Commission tabs' custom keys. Dialogs that refill their form
+  from the record skip that while the banner shows, so the typing survives.
+
+### Known gaps (not failures of this branch — see the domain doc)
+
+- **Other viewers' tables do not update live.** The re-fetch reaches only the tab whose save was
+  refused; anyone else viewing the list stays stale until reload, because frappe-react-sdk's event
+  hooks drop other components' `list_update` handlers (`socket.off(event)` without the handler).
+  Pre-existing, app-wide, separate fix. Safe: their own save would be refused.
+- **A direct database update** (raw SQL, `set_value(..., update_modified=False)`) is invisible to
+  the check, the banner, the Version history and live page refresh. Test through the app or Desk.
+
+### Deliberately not covered
+
+- Reverted by the owner: User edit, Reminder Schedule, Expense Type, Work Milestones / Work Headers.
+- **Projects, Procurement Orders, Service Requests / Work Orders, Vendors**: the check watches only the
+  parent `modified`, so child-table records get false alarms and blind spots. They need a scoped check
+  (not built).
+
+### Testing
+
+4,539 frontend unit tests pass; rolled-back server test per covered doctype plus a mixed bulk batch and
+CEO approve; residence check adds 0 violations. Browser (two real sessions): money screens, Help, PR
+tags, Design task, Products, In-Flow table re-fetch; Commission, PMO, Critical PO, Assets, Invoices and
+Non Project Inflows are covered by the server tests only.
+
+---
+
 ## 2026-09-21: Payments queue — edit & revert, payment summary, raiser skip, in-place delete, expense approval details
 
 **Summary:** Seven owner-requested changes to the unified Payments queue and the dialogs around it, on

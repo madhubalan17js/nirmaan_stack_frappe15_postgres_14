@@ -181,6 +181,17 @@ computed before the lock existed. A selection exceeding the challan's remaining 
 naming the shortfall; there is **no partial payment and no splitting one deduction across two
 challans**.
 
+After the challan lock, `_apply` also locks the selected **deduction rows** (`SELECT ... FOR UPDATE`,
+sorted by name so two payers cannot deadlock). Without it, two people paying the same deduction against
+two different challans held two different challan locks and both saw it Pending. Part of the
+concurrent-edit branch — see `concurrent-edit.md`.
+
+**One lock order for every TDS writer — challans first, then deductions (2026-10-01).**
+`services/payment_tds.lock_challans_then_deductions` locks each kind in name order. Paying used
+challan → deduction while restating a deduction on a payment edit and the payment `on_trash`
+controller used deduction → challan; two real connections deadlocked (`DeadlockDetected`). All
+three now take the same order, so the second writer waits instead.
+
 ---
 
 ## Editing a payment that already carries a deduction
