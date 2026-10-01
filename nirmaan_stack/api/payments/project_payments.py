@@ -314,7 +314,7 @@ def create_project_payment(
 
 
 @frappe.whitelist()
-def ceo_approve_payment(payment_id: str, approved_amount=None) -> dict:
+def ceo_approve_payment(payment_id: str, approved_amount=None, expected_modified=None) -> dict:
     """
     Promotes a "CEO Pending" payment to "Approved".
     Only the hardcoded CEO user (see authorized_users.CEO_AUTHORIZED_USER) may call this.
@@ -332,9 +332,15 @@ def ceo_approve_payment(payment_id: str, approved_amount=None) -> dict:
 
     ONE endpoint deliberately covers both paths so the CEO gate and the
     "must be CEO Pending" guard are defined exactly once.
+
+    ``expected_modified`` is the payment's ``modified`` as the CEO's screen loaded it. When sent,
+    a payment saved since is refused with TimestampMismatchError naming who changed it -- the
+    same rule bulk approve applies per row (``services.concurrent_edit.is_stale``). Not sent = no check.
     """
     if frappe.session.user != CEO_AUTHORIZED_USER:
         frappe.throw(_("Only the authorised CEO user can perform this action."), frappe.PermissionError)
+
+    _lock_and_check_ceo_approvable(payment_id, expected_modified)
 
     # Whitelisted args arrive as strings; "" and None both mean "not supplied".
     wants_partial = approved_amount not in (None, "")
@@ -389,6 +395,27 @@ def ceo_approve_payment(payment_id: str, approved_amount=None) -> dict:
             return {"status": "success", "message": _("Cheque payment approved and moved to Reconciliation Pending.")}
 
     return {"status": "success", "message": _("Payment forwarded for fulfilment.")}
+
+
+def _lock_and_check_ceo_approvable(payment_id: str, expected_modified) -> None:
+    """The checks BOTH CEO paths share, taken under the payment's row lock before anything is read.
+
+    The lock comes first so the amount, status and version read here cannot change before the
+    save; the partial path's own ``FOR UPDATE`` on the same row is then a no-op in this
+    transaction. CEO Hold is checked here too: bulk approve and the partial split already
+    refuse a held project on the server, and the plain full approve was the one path that
+    relied on the screen alone.
+    """
+    from nirmaan_stack.services.concurrent_edit import is_stale, parse_expected_modified, stale_reason
+
+    frappe.db.sql('SELECT name FROM "tabProject Payments" WHERE name = %s FOR UPDATE', payment_id)
+    pay = frappe.get_doc("Project Payments", payment_id)
+
+    if is_stale(pay, parse_expected_modified({payment_id: expected_modified} if expected_modified else None)):
+        frappe.throw(stale_reason(pay), frappe.TimestampMismatchError)
+
+    if pay.project and frappe.db.get_value("Projects", pay.project, "status") == "CEO Hold":
+        frappe.throw(_("This project is on CEO Hold. Payments cannot be approved."))
 
 
 def _post_split_side_effects(result: dict) -> None:
@@ -494,15 +521,27 @@ def update_payment_request(data: str) -> str:
     if action not in ("fulfil", "delete"):
         frappe.throw(_("Invalid action"))
 
-    pay = frappe.get_doc("Project Payments", name)
     if action == "delete":
-        # This calls the helper in this same file
-        _delete_payment(pay)
+        # Deletes are not version-checked, by design (concurrent-edit.md → "Not guarded by design").
+        _delete_payment(frappe.get_doc("Project Payments", name))
     else:
-        # This calls the helper in this same file
-        _fulfil_payment(pay, args)
+        _fulfil_payment(_lock_unchanged_payment(name, args.get("expected_modified")), args)
 
     return frappe.as_json({"status": "success"})
+
+
+def _lock_unchanged_payment(payment_id: str, expected_modified):
+    """The payment under its row lock, refused if it changed since the screen loaded it.
+
+    The fulfil screen shows the amount being paid; a payment edited after it opened must not be
+    closed at Paid on figures the accountant never saw. Not sent = no check (an older screen).
+    """
+    from nirmaan_stack.services.concurrent_edit import is_stale, parse_expected_modified, stale_reason
+
+    pay = frappe.get_doc("Project Payments", payment_id, for_update=True)
+    if is_stale(pay, parse_expected_modified({payment_id: expected_modified} if expected_modified else None)):
+        frappe.throw(stale_reason(pay), frappe.TimestampMismatchError)
+    return pay
 
 
 # ---------------- helpers for the API functions above ------------------------------

@@ -21,8 +21,9 @@ from typing import Callable, Optional
 
 import frappe
 from frappe import _
-from frappe.utils import nowdate
+from frappe.utils import cstr, flt, nowdate
 
+from nirmaan_stack.services.concurrent_edit import is_stale, parse_expected_modified, stale_reason
 from nirmaan_stack.constants.authorized_users import CEO_AUTHORIZED_USER
 from nirmaan_stack.integrations.Notifications.pr_notifications import (
     get_admin_users,
@@ -45,7 +46,9 @@ REJECTED_STATUS = "Rejected"
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def bulk_lead_approve_payments(payment_ids, action: str, rejection_reason: Optional[str] = None):
+def bulk_lead_approve_payments(
+    payment_ids, action: str, rejection_reason: Optional[str] = None, expected_modified=None
+):
     """Admin bulk action on payments currently in 'Requested'."""
     _authorize_lead()
     return _bulk_action(
@@ -53,11 +56,14 @@ def bulk_lead_approve_payments(payment_ids, action: str, rejection_reason: Optio
         action=action,
         rejection_reason=rejection_reason,
         config=_LEAD_CONFIG,
+        expected_modified=expected_modified,
     )
 
 
 @frappe.whitelist()
-def bulk_ceo_approve_payments(payment_ids, action: str, rejection_reason: Optional[str] = None):
+def bulk_ceo_approve_payments(
+    payment_ids, action: str, rejection_reason: Optional[str] = None, expected_modified=None
+):
     """CEO bulk action on payments currently in 'CEO Pending'."""
     _authorize_ceo()
     return _bulk_action(
@@ -65,6 +71,7 @@ def bulk_ceo_approve_payments(payment_ids, action: str, rejection_reason: Option
         action=action,
         rejection_reason=rejection_reason,
         config=_CEO_CONFIG,
+        expected_modified=expected_modified,
     )
 
 
@@ -221,10 +228,22 @@ def _authorize_lead():
 
 
 # ---------------------------------------------------------------------------
+# Stale-row check (shared with `api/approvals/expense_actions.py`)
+# ---------------------------------------------------------------------------
+#
+# The status re-check under the row lock stops a row being approved twice, but not a row that
+# was EDITED after the approver's screen loaded it: the approval would sign off an amount nobody
+# looked at. So the screen sends `{name: modified}` for every row it shows, and a row whose
+# `modified` no longer matches is refused on its own -- the rest of the batch still goes through.
+# Not sent (an older caller) = no check, exactly as before.
+
+# ---------------------------------------------------------------------------
 # Core engine
 # ---------------------------------------------------------------------------
 
-def _bulk_action(payment_ids, action: str, rejection_reason: str | None, config: _ModeConfig):
+def _bulk_action(
+    payment_ids, action: str, rejection_reason: str | None, config: _ModeConfig, expected_modified=None
+):
     if isinstance(payment_ids, str):
         try:
             payment_ids = json.loads(payment_ids)
@@ -244,6 +263,7 @@ def _bulk_action(payment_ids, action: str, rejection_reason: str | None, config:
         frappe.throw(_("Rejection reason is required."))
 
     deduped_ids = list(dict.fromkeys(payment_ids))
+    expected = parse_expected_modified(expected_modified)
 
     payment_rows = frappe.get_all(
         "Project Payments",
@@ -304,6 +324,12 @@ def _bulk_action(payment_ids, action: str, rejection_reason: str | None, config:
             succeeded=succeeded,
             failed=failed,
             pending_comments=pending_comments,
+            expected=expected,
+            target_for_amount=(
+                status_after_l1
+                if action == "approve" and config.approve_target_status == STATUS_CEO_PENDING
+                else None
+            ),
         )
 
     # Commit BEFORE emitting notifications / writing comments (fix E7) — push
@@ -402,8 +428,15 @@ def _process_group(
     succeeded: list[str],
     failed: list[dict],
     pending_comments: list[str],
+    expected: Optional[dict] = None,
+    target_for_amount: Optional[Callable[[object], str]] = None,
 ):
     """Process all payments belonging to one parent doc atomically.
+
+    ``target_status`` was chosen from the amount the caller's screen read, BEFORE any lock.
+    ``target_for_amount`` (L1 approve only) re-derives it from the LOCKED row: a payment whose
+    amount moved into another approval band since then is refused, never landed at the band it
+    no longer belongs to (a 60,000 payment must not finish at Approved without the CEO).
 
     A Postgres SAVEPOINT wraps the whole group so a late failure
     (e.g. ``po_doc.save()`` raising) rolls back every ``pay.save()`` already
@@ -459,6 +492,20 @@ def _process_group(
             failed.append({
                 "name": pid,
                 "reason": f"Status is '{pay.status}', expected '{source_status}'",
+            })
+            continue
+
+        if is_stale(pay, expected or {}):
+            failed.append({"name": pid, "reason": stale_reason(pay)})
+            continue
+
+        if target_for_amount is not None and target_for_amount(flt(pay.amount)) != target_status:
+            failed.append({
+                "name": pid,
+                "reason": (
+                    f"The amount is now {flt(pay.amount):,.0f}, which needs a different approval "
+                    "level. Refresh and approve again."
+                ),
             })
             continue
 

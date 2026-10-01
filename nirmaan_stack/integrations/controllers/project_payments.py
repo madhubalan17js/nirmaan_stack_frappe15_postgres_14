@@ -506,13 +506,20 @@ def on_trash(doc, method):
     # below the challan keeps counting tax paid against a row that no longer exists. Measured on
     # localhost: a challan still reading Rs 150 used with ZERO deductions behind it, and therefore
     # Rs 150 short of usable balance forever.
-    challans = frappe.db.sql_list(
-        """
-        SELECT DISTINCT tds_challan FROM "tabPayment TDS Deduction"
-        WHERE project_payment = %s AND tds_challan IS NOT NULL
-        """,
-        (doc.name,),
+    deductions = frappe.db.get_all(
+        "Payment TDS Deduction", filters={"project_payment": doc.name}, fields=["name", "tds_challan"]
     )
+    # ⚠️ CHALLAN BEFORE DEDUCTION -- the order paying TDS takes them, or a delete racing a TDS
+    # payment deadlocks (`payment_tds.lock_challans_then_deductions`). Re-read through the locks so
+    # a challan assigned in between is still recomputed below.
+    payment_tds.lock_challans_then_deductions([d.tds_challan for d in deductions], [d.name for d in deductions])
+    challans = sorted({
+        d.tds_challan
+        for d in frappe.db.get_all(
+            "Payment TDS Deduction", filters={"project_payment": doc.name}, fields=["tds_challan"]
+        )
+        if d.tds_challan
+    } | {d.tds_challan for d in deductions if d.tds_challan})
 
     frappe.db.delete("Payment TDS Deduction", {"project_payment": doc.name})
 

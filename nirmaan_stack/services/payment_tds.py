@@ -331,6 +331,22 @@ def recompute_challan_reconciled(challan: str | None) -> float | None:
 	return total
 
 
+def lock_challans_then_deductions(challans, deductions) -> None:
+	"""Row-lock the challans, THEN the deductions -- the one lock order every TDS writer uses.
+
+	⚠️ THE ORDER IS THE WHOLE POINT. Paying TDS (`api/tds_challan/pay_tds._apply`) locks the challan
+	and then its deductions. A payment edit or delete that touched the deduction first and the
+	challan second (through `recompute_challan_reconciled`) held one row each while waiting for the
+	other's -- Postgres then kills one transaction with DeadlockDetected (reproduced with two real
+	connections, 2026-10-01). Taking them in the same order makes the second writer simply wait.
+	Each kind is locked in name order, so two writers with several rows cannot cross either.
+	"""
+	for challan in sorted({c for c in challans if c}):
+		frappe.db.sql(f'SELECT name FROM "tab{CHALLAN_DOCTYPE}" WHERE name = %s FOR UPDATE', (challan,))
+	for deduction in sorted({d for d in deductions if d}):
+		frappe.db.sql(f'SELECT name FROM "tab{TDS_DOCTYPE}" WHERE name = %s FOR UPDATE', (deduction,))
+
+
 def restate_deduction_on_amount_change(doc) -> str | None:
 	"""Re-derive an existing deduction after its payment's amount was edited.
 
@@ -366,6 +382,14 @@ def restate_deduction_on_amount_change(doc) -> str | None:
 	name = existing_deduction(doc.name)
 	if not name:
 		return None
+
+	# Challan before deduction (see `lock_challans_then_deductions`), and the row is read THROUGH
+	# the locks. A challan assigned between the first read and the lock is locked as well.
+	challan_seen = frappe.db.get_value(TDS_DOCTYPE, name, "tds_challan")
+	lock_challans_then_deductions([challan_seen], [name])
+	challan_now = frappe.db.get_value(TDS_DOCTYPE, name, "tds_challan")
+	if challan_now and challan_now != challan_seen:
+		lock_challans_then_deductions([challan_now], [])
 
 	row = frappe.db.get_value(
 		TDS_DOCTYPE,
