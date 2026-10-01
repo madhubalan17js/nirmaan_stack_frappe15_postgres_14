@@ -694,7 +694,7 @@ const EditCategoryDialog: React.FC<{
               </Button>
               <Button
                 type="submit"
-                disabled={loading || stale.isSaveBlocked(form.watch())}
+                disabled={stale.isSaveBlocked(form.watch()) || loading}
                 className="bg-slate-900 hover:bg-slate-800 text-white"
               >
                 {loading ? (
@@ -1034,7 +1034,7 @@ const EditTaskDialog: React.FC<{
               </Button>
               <Button
                 type="submit"
-                disabled={loading || stale.isSaveBlocked(form.watch())}
+                disabled={stale.isSaveBlocked(form.watch()) || loading}
                 className="bg-slate-900 hover:bg-slate-800 text-white"
               >
                 {loading ? (

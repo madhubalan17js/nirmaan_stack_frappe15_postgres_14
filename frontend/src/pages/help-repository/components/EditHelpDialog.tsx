@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,17 +43,17 @@ export const EditHelpDialog: React.FC<EditHelpDialogProps> = ({ open, onOpenChan
         },
     });
 
-    // Initialize form values when dialog opens (event-driven, not useEffect)
-    const handleOpenChange = (isOpen: boolean) => {
-        if (isOpen && item) {
-            form.reset({
-                title: item.title,
-                description: item.description || "",
-                video_link: item.video_link,
-            });
-        }
-        onOpenChange(isOpen);
-    };
+    // Fill the form each time the dialog opens with an article. The page opens it through the
+    // `open` prop, which never calls `onOpenChange`, so filling there left the form EMPTY ("Title
+    // is required" on every save). Keyed on open + article name only, so a refreshed copy of the
+    // same article never wipes what the user is typing.
+    const itemName = item?.name;
+    useEffect(() => {
+        if (open && item) form.reset(helpFormFrom(item));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, itemName]);
+
+    const handleOpenChange = (isOpen: boolean) => onOpenChange(isOpen);
 
     const onSubmit = async (values: HelpItemFormValues) => {
         if (!item) return;
@@ -135,7 +135,7 @@ export const EditHelpDialog: React.FC<EditHelpDialogProps> = ({ open, onOpenChan
                                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100">
                                     Cancel
                                 </Button>
-                                <Button type="submit" disabled={updating || stale.isSaveBlocked(form.watch())} className="bg-blue-600 hover:bg-blue-700 text-white">
+                                <Button type="submit" disabled={stale.isSaveBlocked(form.watch()) || updating} className="bg-blue-600 hover:bg-blue-700 text-white">
                                     {updating ? "Updating..." : stale.conflict ? "Save again" : "Update"}
                                 </Button>
                             </DialogFooter>

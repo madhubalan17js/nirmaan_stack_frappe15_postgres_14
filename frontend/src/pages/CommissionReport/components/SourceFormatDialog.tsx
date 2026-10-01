@@ -262,7 +262,7 @@ export const SourceFormatDialog: React.FC<Props> = ({ task, mutate }) => {
                     <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                         Cancel
                     </Button>
-                    <Button onClick={handleSave} disabled={saving || !isDirty || stale.isSaveBlocked({ sourceText, isActive })}>
+                    <Button onClick={handleSave} disabled={stale.isSaveBlocked({ sourceText, isActive }) || saving || (!stale.conflict && !isDirty)}>
                         {saving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
                         {stale.conflict ? 'Save again' : 'Save'}
                     </Button>

@@ -1,3 +1,7 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import { fetchStaleInfo, isStaleRecordError, STALE_MESSAGE_METHOD, STALE_RECORD_MESSAGE } from "@/utils/frappeErrors";
@@ -56,6 +60,10 @@ describe("changedFields (the banner names WHICH fields changed; the form shows t
     it("skips child tables and private fields", () => {
         const latest = { ...base, items: [{ qty: 2 }], _comments: "[1]", _liked_by: "x" };
         expect(changedFields({ ...base, items: [{ qty: 1 }] }, latest)).toEqual([]);
+    });
+
+    it("names a field by the form's own label when the server sent one", () => {
+        expect(changedFields(base, { ...base, amount: 45000, comment: "x" }, { amount: "Req. Amount" })).toEqual(["Comment", "Req. Amount"]);
     });
 
     it("lists several changes in the record's field order", () => {
@@ -128,6 +136,14 @@ describe("resolveConflict (a second conflict merges against the first one's vers
 });
 
 describe("fetchStaleInfo (through the SDK client, never a raw fetch)", () => {
+    it("passes the form's field labels through, and resolveConflict names fields with them", async () => {
+        const call = { get: async () => ({ message: { message: "x", modified: "m", by: "Priyanka", at: "01 Oct, 07:00 PM", labels: { utr: "UTR" } } }) };
+        const info = await fetchStaleInfo(call, "Project Inflows", "PAYIN-1");
+        expect(info.labels).toEqual({ utr: "UTR" });
+        const record = { name: "PAYIN-1", modified: "a", utr: "OLD" };
+        expect(resolveConflict(record, null, { ...record, modified: "m", utr: "NEW" }, info).conflict.changes).toEqual(["UTR"]);
+    });
+
     it("calls the concurrent_edit endpoint and returns who changed it plus the current version", async () => {
         const calls: unknown[] = [];
         const call = { get: async (method: string, params?: Record<string, unknown>) => {
@@ -233,4 +249,29 @@ describe("conflictHeadline (names only the LAST saver; with 3+ users the changes
         expect(conflictHeadline({ message: "Priyanka changed this record at 01 Oct, 10:00 AM, after you opened it. Refresh and try again." }))
             .toBe("Priyanka changed this record at 01 Oct, 10:00 AM.");
     });
+});
+
+describe("Save again buttons call isSaveBlocked FIRST (its photo must be taken at the warning)", () => {
+    // Only the folders that hold screens; read once and shared by both checks (the tree is large).
+    const srcDir = join(fileURLToPath(new URL(".", import.meta.url)), "..");
+    const files = (dir: string): string[] =>
+        readdirSync(dir).flatMap((entry) => {
+            const path = join(dir, entry);
+            if (statSync(path).isDirectory()) return files(path);
+            return entry.endsWith(".tsx") ? [path] : [];
+        });
+    let sources: Array<{ path: string; text: string }> | null = null;
+    const screens = () =>
+        (sources ??= ["pages", "components"]
+            .flatMap((dir) => files(join(srcDir, dir)))
+            .map((path) => ({ path: path.slice(srcDir.length + 1), text: readFileSync(path, "utf8") }))
+            .filter(({ text }) => text.includes("isSaveBlocked")));
+
+    it("no screen puts another condition in front of stale.isSaveBlocked(...)", () => {
+        expect(screens().filter(({ text }) => /\|\|\s*stale\.isSaveBlocked\(/.test(text)).map(({ path }) => path)).toEqual([]);
+    }, 60_000);
+
+    it("the scan sees the real call sites (guards against a scan that finds nothing)", () => {
+        expect(screens().length).toBeGreaterThanOrEqual(18);
+    }, 60_000);
 });

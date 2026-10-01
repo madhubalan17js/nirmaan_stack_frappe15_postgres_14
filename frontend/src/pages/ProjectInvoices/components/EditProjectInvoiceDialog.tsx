@@ -685,7 +685,7 @@ export function EditProjectInvoiceDialog({ invoiceToEdit, listMutate, onClose }:
                             </AlertDialogCancel>
                             <Button
                                 onClick={handleSubmitInvoice}
-                                disabled={isSubmitDisabled || stale.isSaveBlocked({ invoiceData, newAttachmentFile, attachmentAction })}
+                                disabled={stale.isSaveBlocked({ invoiceData, newAttachmentFile, attachmentAction }) || isSubmitDisabled}
                                 className={cn(
                                     "h-10 px-5 text-sm font-medium",
                                     "bg-amber-600 hover:bg-amber-700 text-white",

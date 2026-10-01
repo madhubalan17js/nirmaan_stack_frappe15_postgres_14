@@ -1180,7 +1180,7 @@ const AssetOverviewContent: React.FC<{ assetId: string }> = ({ assetId }) => {
                         </Button>
                         <Button
                             onClick={handleEditSubmit}
-                            disabled={isUpdating || !editForm.asset_name.trim() || !editForm.asset_category || stale.isSaveBlocked(editForm)}
+                            disabled={stale.isSaveBlocked(editForm) || isUpdating || !editForm.asset_name.trim() || !editForm.asset_category}
                         >
                             {isUpdating ? 'Saving...' : stale.conflict ? 'Save again' : 'Save Changes'}
                         </Button>

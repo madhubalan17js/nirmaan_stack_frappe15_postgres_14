@@ -548,7 +548,7 @@ export const EditInflowPayment: React.FC<EditInflowPaymentProps> = ({ inflowToEd
                             </AlertDialogCancel>
                             <Button
                                 onClick={handleSubmitPayment}
-                                disabled={isSubmitDisabled || stale.isSaveBlocked({ formState, newPaymentScreenshot, attachmentAction })}
+                                disabled={stale.isSaveBlocked({ formState, newPaymentScreenshot, attachmentAction }) || isSubmitDisabled}
                                 className={cn(
                                     "h-10 px-5 text-sm font-medium",
                                     "bg-amber-600 hover:bg-amber-700 text-white",

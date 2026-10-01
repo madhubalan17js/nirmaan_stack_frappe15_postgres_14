@@ -78,13 +78,18 @@ screens call is `nirmaan_stack/api/concurrent_edit/last_change.py`.
   - `isSaveBlocked(form)` — for the "Save again" button's `disabled`. True while the banner shows
     and nothing in the form changed since the refill (pass everything the form holds: fields,
     picked file, attachment action, section toggles). Never blocks when the latest could not be
-    loaded (`conflict.unloaded`).
+    loaded (`conflict.unloaded`). ⚠️ **Put it FIRST in the expression:**
+    `disabled={stale.isSaveBlocked(form) || other}`. Its first call after a warning photographs
+    the form; behind `other ||` it is skipped while `other` is true (a required field the latest
+    data left empty), the photo is taken only once the user has re-entered their change, and the
+    button never enables again. `useStaleConflict.test.ts` scans `pages/` and `components/` for
+    the wrong order.
   - A **moving baseline**: after a conflict, the next comparison is against that conflict's latest
     version, so a second conflict on the same open dialog lists only what changed since the first.
   - The conflict is cleared when the dialog opens/closes or the record changes.
-- `changedFields(opened, latest)` — pure; the changed fields' **labels only** ("Invoice ref",
-  "Invoice date"). Skips system fields, `_` fields, child tables / JSON, and fields the screen
-  never loaded.
+- `changedFields(opened, latest, labels)` — pure; the changed fields' **names only**, using the
+  form's own labels sent by `get_stale_message` ("UTR", "Payment Date"), else the tidied fieldname.
+  Skips system fields, `_` fields, child tables / JSON, and fields the screen never loaded.
 - `takeLatest(current, opened, latest)` — pure; the form becomes the LATEST saved version for
   every field the mapping covers. What the user typed is not kept.
 - `followAttachment(opened, latest)` — pure; the attachment always shows the latest saved file; the
@@ -185,6 +190,15 @@ as failures of these commits.
 
 The re-fetch above runs **in the browser whose save was refused only** — `RECORD_CHANGED_EVENT` is a
 `window` event and never leaves that tab.
+
+**Not universal (seen live 2026-10-01):** the product page (`/products/:id`), the asset page
+(`/asset-management/:id`) and the payments approval queue (CEO Pending) DID re-fetch within a second
+of another user's save. The expense, inflow and invoice lists did not. Two consequences:
+- On those screens a "stale" action is usually not stale any more — the screen already shows the
+  latest, so the action is (correctly) accepted. Testing a refusal there needs a screen that does
+  not refresh; testing a bulk/approve action there makes it REAL.
+- A dialog on such a screen must keep the record **as opened** (a snapshot) for both its form and
+  the version it sends — see Gotchas.
 
 | Who | Their table after someone else's save | What updates it |
 |---|---|---|
@@ -296,7 +310,9 @@ exists when two people act together.
 ### H1. Live updates for other viewers (decisions D2–D4) — FUTURE GOAL, on hold
 
 **What is missing:** when Nitesh saves, Priyanka's open table and open dialog do not change until
-she refreshes or tries to save (Known gap 1). Seen live 2026-10-01 in both directions.
+she refreshes or tries to save (Known gap 1). Seen live 2026-10-01 in both directions on the
+expense / inflow / invoice lists — but the product page, asset page and the approvals queue already
+refresh (Known gap 1, "Not universal"), so H1 starts from those as the working examples.
 
 **Why it is on hold:**
 - It is **app-wide, not finance-only**: 78 call sites in 42 files use the broken SDK hooks; this
@@ -488,7 +504,7 @@ background writer that skips `modified`.
    await updateDoc(doctype, record.name, { ...changes, ...stale.guard() });
    if (await stale.handle(error, (latest, opened) => setForm(f => takeLatest(f, formFrom(opened), formFrom(latest))))) return;
    <StaleConflictBanner conflict={stale.conflict} />
-   <Button disabled={saving || stale.isSaveBlocked({ ...form, pickedFile })}>…</Button>
+   <Button disabled={stale.isSaveBlocked({ ...form, pickedFile }) || saving}>…</Button>   {/* check FIRST */}
    ```
 
    `formFrom(record)` is the pure record-to-form mapping the dialog already uses to fill itself. An
@@ -500,6 +516,17 @@ background writer that skips `modified`.
 ---
 
 ## Gotchas
+
+- **`isSaveBlocked` goes first in the button's `disabled`** (see Frontend pieces). Fixed on all 22
+  buttons 2026-10-01 after it locked Mark as Paid and the Commission template editor.
+- **A dialog's own "nothing changed" check must apply only BEFORE a warning**:
+  `(!stale.conflict && <unchanged-vs-opened>)`. It compares with the record as first opened, so
+  after a warning it blocks the user's real choice (Asset Category could never be saved). After a
+  warning `isSaveBlocked` already answers "unchanged since the latest".
+- **A dialog on a live-refreshing page keeps the record AS OPENED** (Edit Product, Asset edit's
+  `editBase`). Refilling on every re-fetch silently wipes the user's typing; refilling nothing but
+  sending the re-fetched version would let the user's older form overwrite the newer save unseen.
+  Snapshot at open, fill from it, send its version; a newer save then shows as the normal warning.
 
 - **A rename skips the guard.** `rename_doc` / `update_document_title` can move the version, so a
   save that also renames sends no `modified` (`...(nameChanged ? {} : stale.guard())`).
@@ -564,7 +591,24 @@ background writer that skips `modified`.
   data refills every field; attachment follows the latest file (A1–A3); the invoice section follows
   the latest; Save again disabled until a change; the short banner; same-second saves → loser gets
   the banner (PUT 500), winner the success toast.
-- **Not yet clicked through in a browser:** Commission, PMO, Critical PO, Product Packages
+- **Browser, 2026-10-01, every guarded save point (two sessions):** 22 edit dialogs, 11 one-click
+  actions, 2 bulk actions. No stale save overwrote anyone. Found and fixed the same day, each
+  re-tested live: Save again stuck in PE / NPE Mark as Paid and the Commission template editor
+  (check order); Asset Category never savable after a warning (own "unchanged" check); Edit
+  Product on the product page silently reset by a live re-fetch (now a snapshot); Help Edit
+  opened empty (pre-existing); Mark-as-Paid summary showed the old comment; banner field names
+  now use the form's labels.
+- **Live-refreshing screens (asset page assign / unassign, bulk CEO approve, bulk expense approve),
+  2026-10-01, both paths:** (A) the other user's save arrives live → the screen shows it and the
+  action runs on the latest (correctly accepted, nothing overwritten); (B) the live event is late or
+  lost (simulated with a version-only change) → the action is refused naming who changed it; a
+  mixed bulk batch reports "1 succeeded, 1 failed" with the reason on the stale row. Real changes
+  made by the tests were reverted (an approved PO keeps today's `modified`).
+- **⚠️ Testing hazard:** restoring a record by writing its values back does NOT undo what its save
+  pushed elsewhere. Critical PO Items → Critical PO Tasks + PO link rows; PMO Task Master → every
+  PMO Project Task; Commission task rename → tracker rows; Items billing category → PO / PR lines.
+  Check the save hooks first and revert through a proper save or targeted update.
+- **Not yet clicked through in a browser (before 2026-10-01):** Commission, PMO, Critical PO, Product Packages
   category, Assets (edit, assign / unassign), Invoices, Non Project Inflows. Server tests cover
   them.
 - **Found while testing, pre-existing, not fixed:** the Help edit dialog opens with empty fields

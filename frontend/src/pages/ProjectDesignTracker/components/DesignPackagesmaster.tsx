@@ -486,7 +486,7 @@ const EditCategoryDialog: React.FC<EditCategoryDialogProps> = ({ category, mutat
               </Button>
               <Button
                 type="submit"
-                disabled={isLoading || stale.isSaveBlocked(form.watch())}
+                disabled={stale.isSaveBlocked(form.watch()) || isLoading}
                 className="bg-slate-900 hover:bg-slate-800 text-white"
               >
                 {isLoading ? <TailSpin height={16} width={16} color="white" /> : stale.conflict ? "Save again" : "Save"}
@@ -730,7 +730,7 @@ const EditTaskDialog: React.FC<EditTaskDialogProps> = ({ task, mutate }) => {
               </Button>
               <Button
                 type="submit"
-                disabled={loading || stale.isSaveBlocked(form.watch())}
+                disabled={stale.isSaveBlocked(form.watch()) || loading}
                 className="bg-slate-900 hover:bg-slate-800 text-white"
               >
                 {loading ? <TailSpin height={16} width={16} color="white" /> : stale.conflict ? "Save again" : "Save"}

@@ -94,6 +94,8 @@ export interface StaleInfo {
     at?: string;
     /** The last save was the caller's own (another tab or window). */
     self?: boolean;
+    /** fieldname -> the form's label ("utr" -> "UTR"), for the banner's "Changed:" line. */
+    labels?: Record<string, string>;
 }
 
 /** The SDK's `call` client (from `FrappeContext`) -- only its `get` is used. */
@@ -116,6 +118,7 @@ export const fetchStaleInfo = async (call: FrappeCallClient, doctype: string, na
                 by: typeof msg.by === "string" && msg.by ? msg.by : undefined,
                 at: typeof msg.at === "string" && msg.at ? msg.at : undefined,
                 self: msg.self === true,
+                labels: msg.labels && typeof msg.labels === "object" ? msg.labels : undefined,
             };
         }
     } catch {

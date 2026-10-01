@@ -483,7 +483,7 @@ const EditCategoryDialog: React.FC<EditCategoryDialogProps> = ({ category, mutat
             />
             <div className="flex justify-end space-x-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={isLoading || stale.isSaveBlocked(form.watch())} className="bg-slate-900 hover:bg-slate-800">
+              <Button type="submit" disabled={stale.isSaveBlocked(form.watch()) || isLoading} className="bg-slate-900 hover:bg-slate-800">
                 {isLoading ? <TailSpin height={20} width={20} color="white" /> : stale.conflict ? "Save again" : "Save"}
               </Button>
             </div>
@@ -690,7 +690,7 @@ const EditItemDialog: React.FC<EditItemDialogProps> = ({ item, mutate }) => {
             />
             <div className="flex justify-end space-x-2">
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={loading || stale.isSaveBlocked(form.watch())}>
+              <Button type="submit" disabled={stale.isSaveBlocked(form.watch()) || loading}>
                 {loading ? <TailSpin height={20} width={20} color="white" /> : stale.conflict ? "Save again" : "Save"}
               </Button>
             </div>

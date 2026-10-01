@@ -360,7 +360,7 @@ export const EditProjectExpenseDialog: React.FC<EditProjectExpenseDialogProps> =
                 <AlertDialogFooter>
                     {isLoadingOverall ? <div className="flex justify-end w-full"><TailSpin color="#4f46e5" height={28} width={28} /></div> : <>
                         <AlertDialogCancel asChild><Button variant="outline" type="button" onClick={handleDialogClose}>Cancel</Button></AlertDialogCancel>
-                        <AlertDialogAction onClick={(e) => { e.preventDefault(); handleSubmit(); }} disabled={isSubmitDisabled || stale.isSaveBlocked({ formState, newInvoiceFile, newPaymentFile })}>{stale.conflict ? "Save again" : "Save Changes"}</AlertDialogAction>
+                        <AlertDialogAction onClick={(e) => { e.preventDefault(); handleSubmit(); }} disabled={stale.isSaveBlocked({ formState, newInvoiceFile, newPaymentFile }) || isSubmitDisabled}>{stale.conflict ? "Save again" : "Save Changes"}</AlertDialogAction>
                     </>}
                 </AlertDialogFooter>
             </AlertDialogContent>

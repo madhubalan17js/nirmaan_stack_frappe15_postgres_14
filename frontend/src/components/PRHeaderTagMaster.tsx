@@ -391,7 +391,7 @@ const EditPRTagHeaderDialog: React.FC<{ tag: PRTagHeader } & PRTagHeaderDialogPr
             />
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={loading || stale.isSaveBlocked(form.watch())} className="bg-slate-900 text-white">
+              <Button type="submit" disabled={stale.isSaveBlocked(form.watch()) || loading} className="bg-slate-900 text-white">
                 {loading ? <TailSpin height={16} width={16} color="white" /> : stale.conflict ? "Save again" : "Save Changes"}
               </Button>
             </div>

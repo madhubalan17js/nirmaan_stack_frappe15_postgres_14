@@ -79,15 +79,20 @@ const sameValue = (a: unknown, b: unknown) => {
  * The NAMES of the fields that differ between the version opened and the latest one, e.g.
  * ["Invoice date", "Invoice ref", "Invoice attachment"]. PURE. Names only (owner 2026-10-01): the
  * form below already shows the new values. Skips system fields, private (`_`) fields, child tables
- * and fields the screen never loaded (a list query fetches only some columns).
+ * and fields the screen never loaded (a list query fetches only some columns). Each name is the
+ * form's own label when the server sent it (`labels`, e.g. "UTR"), else the tidied fieldname.
  */
-export const changedFields = (opened: Record<string, any>, latest: Record<string, any>): string[] =>
+export const changedFields = (
+    opened: Record<string, any>,
+    latest: Record<string, any>,
+    labels: Record<string, string> = {}
+): string[] =>
     Object.keys(latest).flatMap((key) => {
         if (SYSTEM_FIELDS.has(key) || key.startsWith("_")) return [];
         if (!(key in opened)) return [];
         const after = latest[key];
         if (typeof after === "object" && after !== null) return []; // child tables / JSON
-        return sameValue(opened[key], after) ? [] : [labelOf(key)];
+        return sameValue(opened[key], after) ? [] : [labels[key] || labelOf(key)];
     });
 
 /**
@@ -153,7 +158,7 @@ export const resolveConflict = (
     return {
         conflict: {
             headline: conflictHeadline(info),
-            changes: latest ? changedFields(opened, latest) : [],
+            changes: latest ? changedFields(opened, latest, info.labels) : [],
             // The record could not be re-read: the message endpoint's version still lets
             // "Save again" through, instead of re-sending the refused one forever.
             modified: latest?.modified ?? info.modified,
@@ -219,6 +224,12 @@ export const useStaleConflict = ({ doctype, record, open, onRefresh }: Options) 
      * form in the same render batch as the warning, so that render already shows the latest data.
      * Never blocks when the latest could not be loaded: the form then still holds the user's own
      * work, which is exactly what they need to save.
+     *
+     * ⚠️ CALL IT FIRST, UNCONDITIONALLY: `disabled={stale.isSaveBlocked(form) || other}`, never
+     * `other || stale.isSaveBlocked(form)`. Behind `||` it is skipped while `other` is true -- e.g. a
+     * required field the latest data left empty -- so the photo is taken later, when the user has
+     * already re-entered their change, and that change then counts as "unchanged" forever.
+     * `useStaleConflict.test.ts` scans the screens for the wrong order.
      */
     const isSaveBlocked = (form: unknown): boolean => {
         if (!conflict || conflict.unloaded) return false;

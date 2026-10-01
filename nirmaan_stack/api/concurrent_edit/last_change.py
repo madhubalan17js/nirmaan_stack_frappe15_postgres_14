@@ -27,4 +27,7 @@ def get_stale_message(doctype: str, name: str) -> dict:
 		"by": display_name(row.modified_by) if row.modified_by else None,
 		"at": get_datetime(row.modified).strftime("%d %b, %I:%M %p") if row.modified else None,
 		"self": row.modified_by == frappe.session.user,
+		# The form's own field labels ("UTR", not "Utr"), so the banner names a changed field the
+		# way the screen does. Custom fields are included (get_meta merges them).
+		"labels": {df.fieldname: df.label for df in frappe.get_meta(doctype).fields if df.label},
 	}

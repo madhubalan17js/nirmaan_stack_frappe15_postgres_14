@@ -467,7 +467,7 @@ export const EditNonProjectExpense: React.FC<EditNonProjectExpenseProps> = ({ ex
                     ) : (
                         <>
                             <AlertDialogCancel asChild><Button variant="outline">Cancel</Button></AlertDialogCancel>
-                            <AlertDialogAction onClick={(e) => { e.preventDefault(); handleSubmit(); }} disabled={isSubmitDisabled || stale.isSaveBlocked({ formState, newPaymentAttachmentFile, newInvoiceAttachmentFile, paymentAttachmentAction, invoiceAttachmentAction, recordInvoiceDetails })}>{stale.conflict ? "Save again" : "Save Changes"}</AlertDialogAction>
+                            <AlertDialogAction onClick={(e) => { e.preventDefault(); handleSubmit(); }} disabled={stale.isSaveBlocked({ formState, newPaymentAttachmentFile, newInvoiceAttachmentFile, paymentAttachmentAction, invoiceAttachmentAction, recordInvoiceDetails }) || isSubmitDisabled}>{stale.conflict ? "Save again" : "Save Changes"}</AlertDialogAction>
                         </>
                     )}
                 </AlertDialogFooter>

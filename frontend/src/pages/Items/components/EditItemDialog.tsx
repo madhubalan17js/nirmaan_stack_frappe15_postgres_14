@@ -41,7 +41,18 @@ interface EditItemDialogProps {
     canLinkTds?: boolean;
 }
 
-export const EditItemDialog: React.FC<EditItemDialogProps> = ({ item, isOpen, onOpenChange, onItemUpdated, canLinkTds = false }) => {
+export const EditItemDialog: React.FC<EditItemDialogProps> = ({ item: liveItem, isOpen, onOpenChange, onItemUpdated, canLinkTds = false }) => {
+    // The product AS OPENED. The product page re-fetches the product live when someone else saves
+    // it; following that would silently wipe what the user is typing AND send the newer version
+    // with the user's older form -- an overwrite the stale check could no longer see. The form,
+    // the "changed?" check and the version sent all read this copy; a newer save shows up as the
+    // usual warning on Save. Re-taken only when the dialog opens or another product is shown.
+    const [item, setItem] = useState<ItemsType | null>(null);
+    useEffect(() => {
+        if (!isOpen) { setItem(null); return; }
+        setItem((opened) => (opened && opened.name === liveItem?.name ? opened : liveItem));
+    }, [isOpen, liveItem]);
+
     const [itemName, setItemName] = useState("");
     const [selectedUnit, setSelectedUnit] = useState("");
     const [selectedCategory, setSelectedCategory] = useState("");
@@ -126,7 +137,7 @@ export const EditItemDialog: React.FC<EditItemDialogProps> = ({ item, isOpen, on
     const isReassignment = !!originalTdsItem && !!selectedTdsItem && selectedTdsItem !== originalTdsItem;
     const isUnlinking = !!originalTdsItem && !selectedTdsItem;
 
-    // Initialize state when item changes
+    // Fill the form from the product as opened (never from a live re-fetch -- see `item` above).
     useEffect(() => {
         // After a conflict the form holds the user's unsaved work -- the list refresh must not reset it.
         if (stale.conflict) return;
@@ -363,7 +374,7 @@ export const EditItemDialog: React.FC<EditItemDialogProps> = ({ item, isOpen, on
 
                     <div className="flex justify-center mt-3">
                         <Button
-                            disabled={updateLoading || !isDirty || isDuplicate || stale.isSaveBlocked({ itemName, selectedUnit, selectedCategory, selectedBillingCategory, selectedItemStatus, selectedTdsItem })}
+                            disabled={stale.isSaveBlocked({ itemName, selectedUnit, selectedCategory, selectedBillingCategory, selectedItemStatus, selectedTdsItem }) || updateLoading || (!stale.conflict && !isDirty) || isDuplicate}
                             className="flex items-center gap-1"
                             onClick={handleSave}
                         >

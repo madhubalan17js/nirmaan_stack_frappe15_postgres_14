@@ -424,7 +424,7 @@ export const NonProjectInflowDialog: React.FC<NonProjectInflowDialogProps> = ({ 
                     </AlertDialogCancel>
                     <Button
                         onClick={handleSubmit}
-                        disabled={busy || stage === "upload" || stale.isSaveBlocked({ form, receiptFile, attachmentUrl })}
+                        disabled={stale.isSaveBlocked({ form, receiptFile, attachmentUrl }) || busy || stage === "upload"}
                         className="h-10 px-5 text-sm bg-emerald-600 hover:bg-emerald-700 text-white"
                     >
                         {busy && !isAutofilling ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}

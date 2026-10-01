@@ -355,10 +355,14 @@ export const AssetCategoriesList: React.FC = () => {
                         <Button
                             onClick={handleEditSubmit}
                             disabled={
-                                isUpdating
+                                stale.isSaveBlocked({ editCategoryType })
+                                || isUpdating
                                 || !editCategoryType
-                                || editCategoryType === (editingCategory?.category_type || '')
-                                || stale.isSaveBlocked({ editCategoryType })
+                                // "Unchanged" means unchanged from the version the form shows: the
+                                // opened category before a warning, the latest one after it (which
+                                // isSaveBlocked already covers -- `editingCategory` is still the
+                                // opened copy, so comparing with it would block the user's real pick).
+                                || (!stale.conflict && editCategoryType === (editingCategory?.category_type || ''))
                             }
                         >
                             {isUpdating ? 'Saving...' : stale.conflict ? 'Save again' : 'Save Changes'}

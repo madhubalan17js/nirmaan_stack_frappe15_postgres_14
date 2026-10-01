@@ -39,6 +39,20 @@ goals" before planning more work here.**
 - **H3 bulk approve level re-check** — built, waiting for sign-off.
 - Every one must pass a two-browser **real-time** check before it is called done.
 
+### Follow-up the same day — full two-browser test of every guarded save point, 5 fixes
+
+- **Save again stuck after a warning** (PE / NPE Mark as Paid, Commission template editor):
+  `isSaveBlocked` now runs FIRST in all 22 buttons; a test scans the screens for the wrong order.
+- **Asset Category never savable after a warning:** its own "unchanged" check now applies only
+  before a warning (same for the template editor and Edit Product's `isDirty`).
+- **Edit Product (product page) silently reset by a live re-fetch:** the dialog keeps the product
+  as opened for its form and the version it sends.
+- **Help Edit opened empty** (pre-existing): the form fills whenever the dialog opens.
+- **Mark as Paid summary** shows the latest record after a warning; the **banner names fields by
+  the form's labels** (`get_stale_message` returns `labels`).
+- Each re-tested live. Test hazard recorded: restoring by writing values back does not undo save
+  cascades (Critical PO, PMO, Commission, Items).
+
 ### Verified
 
 vitest 4,559 pass (`useStaleConflict.test.ts` 34); 0 new type errors on changed lines; per-doctype

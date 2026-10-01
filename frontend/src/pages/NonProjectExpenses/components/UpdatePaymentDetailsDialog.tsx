@@ -69,9 +69,12 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
     // The invoice attachment as the latest version has it, once a conflict has re-read the record
     // (undefined = the record the dialog opened with). Display and validation only: this dialog
     // never writes the invoice attachment unless a new file is picked.
-    const [conflictInvoiceUrl, setConflictInvoiceUrl] = useState<string | null | undefined>(undefined);
-    const invoiceUrl = conflictInvoiceUrl !== undefined ? conflictInvoiceUrl : expense.invoice_attachment;
-    useEffect(() => { setConflictInvoiceUrl(undefined); }, [isOpen, expense.name]);
+    // After a warning: the latest saved record. The read-only summary and the invoice link show it
+    // (the list row `expense` is the version the dialog was opened from).
+    const [conflictLatest, setConflictLatest] = useState<Record<string, any> | null>(null);
+    const shown = conflictLatest ? { ...expense, ...conflictLatest } : expense;
+    const invoiceUrl = shown.invoice_attachment;
+    useEffect(() => { setConflictLatest(null); }, [isOpen, expense.name]);
     const [existingAttachmentUrl, setExistingAttachmentUrl] = useState<string | undefined>(undefined);
     const [attachmentAction, setAttachmentAction] = useState<AttachmentUpdateAction>("keep");
     const [formErrors, setFormErrors] = useState<Partial<PaymentFormState>>({});
@@ -274,7 +277,7 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
                 setFormState((f) => takeLatest(f, formFrom(opened as NonProjectExpenses), formFrom(latest as NonProjectExpenses)));
                 const att = followAttachment(opened.payment_attachment, latest.payment_attachment);
                 if (att) { setExistingAttachmentUrl(att.url); setAttachmentAction(att.action); setNewAttachmentFile(null); }
-                setConflictInvoiceUrl(latest.invoice_attachment || null);
+                setConflictLatest(latest);
                 if (followAttachment(opened.invoice_attachment, latest.invoice_attachment)) setNewInvoiceFile(null);
             })) return;
             toast({ title: "Error", description: describeWriteError(error, "Failed to update payment details."), variant: "destructive" });
@@ -311,20 +314,20 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
                 <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1.5">
                     <div className="flex items-start justify-between gap-4">
                         <span className="text-muted-foreground">Expense Type</span>
-                        <span className="font-medium text-right">{expense.type || "--"}</span>
+                        <span className="font-medium text-right">{shown.type || "--"}</span>
                     </div>
                     <div className="flex items-start justify-between gap-4">
                         <span className="text-muted-foreground">Amount</span>
-                        <span className="font-semibold text-right">{formatToRoundedIndianRupee(expense.amount)}</span>
+                        <span className="font-semibold text-right">{formatToRoundedIndianRupee(shown.amount)}</span>
                     </div>
                     <div className="flex items-start justify-between gap-4">
                         <span className="text-muted-foreground">Description</span>
-                        <span className="font-medium text-right">{expense.description || "--"}</span>
+                        <span className="font-medium text-right">{shown.description || "--"}</span>
                     </div>
-                    {expense.comment && (
+                    {shown.comment && (
                         <div className="flex items-start justify-between gap-4">
                             <span className="text-muted-foreground">Comment</span>
-                            <span className="text-right">{expense.comment}</span>
+                            <span className="text-right">{shown.comment}</span>
                         </div>
                     )}
                 </div>
@@ -469,7 +472,7 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
                     {isLoadingOverall ? <div className="flex justify-center w-full"><TailSpin color="#4f46e5" height={24} width={24} /></div> : (
                         <>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={(e) => { e.preventDefault(); handleSubmit(); }} disabled={isSubmitDisabled || stale.isSaveBlocked({ formState, newAttachmentFile, attachmentAction, newInvoiceFile })}>{stale.conflict ? "Save again" : markAsPaid ? "Mark as Paid" : "Save Changes"}</AlertDialogAction>
+                            <AlertDialogAction onClick={(e) => { e.preventDefault(); handleSubmit(); }} disabled={stale.isSaveBlocked({ formState, newAttachmentFile, attachmentAction, newInvoiceFile }) || isSubmitDisabled}>{stale.conflict ? "Save again" : markAsPaid ? "Mark as Paid" : "Save Changes"}</AlertDialogAction>
                         </>
                     )}
                 </AlertDialogFooter>
