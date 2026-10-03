@@ -550,6 +550,8 @@ const EditCategoryDialog: React.FC<{
   );
   const { updateDoc } = useFrappeUpdateDoc();
   const stale = useStaleConflict({ doctype: "PMO Task Category", record: category as any, open });
+  // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+  const openedCategory = (stale.opened ?? category) as typeof category;
 
   const form = useForm<CategoryFormValues>({
     resolver: zodResolver(categoryFormSchema),
@@ -564,11 +566,11 @@ const EditCategoryDialog: React.FC<{
     if (stale.conflict) return;
     if (open) {
       form.reset({
-        category_name: category.category_name,
-        is_handover_restricted: Boolean(category.is_handover_restricted),
+        category_name: openedCategory.category_name,
+        is_handover_restricted: Boolean(openedCategory.is_handover_restricted),
       });
     }
-  }, [open, category, stale.conflict]);
+  }, [open, openedCategory, stale.conflict]);
 
   const onSubmit = async (values: CategoryFormValues) => {
     const trimmedName = values.category_name.trim();
@@ -894,6 +896,8 @@ const EditTaskDialog: React.FC<{
   const [open, setOpen] = useState(false);
   const { updateDoc, loading } = useFrappeUpdateDoc();
   const stale = useStaleConflict({ doctype: "PMO Task Master", record: task as any, open });
+  // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+  const openedTask = (stale.opened ?? task) as typeof task;
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(taskFormSchema),
     defaultValues: {
@@ -908,12 +912,12 @@ const EditTaskDialog: React.FC<{
     if (stale.conflict) return;
     if (open) {
       form.reset({
-        task_name: task.task_name,
-        deadline_offset: task.deadline_offset || 0,
-        is_recurring: Boolean(task.is_recurring),
+        task_name: openedTask.task_name,
+        deadline_offset: openedTask.deadline_offset || 0,
+        is_recurring: Boolean(openedTask.is_recurring),
       });
     }
-  }, [open, task, stale.conflict]);
+  }, [open, openedTask, stale.conflict]);
 
   const onSubmit = async (values: TaskFormValues) => {
     try {

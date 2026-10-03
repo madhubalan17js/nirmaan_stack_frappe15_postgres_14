@@ -194,7 +194,34 @@ export const formSignature = (value: unknown): string =>
         return v;
     });
 
-export const useStaleConflict = ({ doctype, record, open, onRefresh }: Options) => {
+/**
+ * The record AS THE FORM LOADED IT, held for as long as the dialog stays open on that record.
+ * PURE. Returns `prev` unchanged (same identity) unless the dialog closed or moved to another
+ * record, so it is safe as an effect dependency.
+ *
+ * ⚠️ LOAD-BEARING: the `record` a dialog receives can be REPLACED by a newer version while the
+ * form still shows the old values -- a live list update, an SWR re-fetch on window focus, a
+ * re-fetch after someone else's refusal. Guarding a save with THAT version tells the server "I
+ * saw the latest" when the user never did, and the save silently overwrites the other person's
+ * change. The guard must carry the version the form was filled from: this one.
+ */
+export const pinOpenedRecord = <R extends { name?: string }>(
+    prev: R | null,
+    open: boolean,
+    record: R | null | undefined
+): R | null => {
+    if (!open) return null;
+    if (!record) return prev;
+    if (!prev || prev.name !== record.name) return record;
+    return prev;
+};
+
+export const useStaleConflict = ({ doctype, record: liveRecord, open, onRefresh }: Options) => {
+    // Every use below reads the PINNED record, never the live prop (see `pinOpenedRecord`).
+    const pinnedRef = useRef<AnyRecord | null>(null);
+    pinnedRef.current = pinOpenedRecord(pinnedRef.current, open, liveRecord);
+    const record = pinnedRef.current ?? liveRecord;
+
     const [conflict, setConflict] = useState<StaleConflict | null>(null);
     // The form as the warning left it (taken on the first `isSaveBlocked` call for that warning).
     const afterWarningRef = useRef<{ conflict: StaleConflict; signature: string } | null>(null);
@@ -274,7 +301,12 @@ export const useStaleConflict = ({ doctype, record, open, onRefresh }: Options) 
         [doctype, record, mutate, call]
     );
 
-    return { conflict, guard, handle, isSaveBlocked };
+    /**
+     * `opened`: the record the form was filled from (pinned while open). A dialog that refills its
+     * form from its record must depend on `stale.opened`, not on the live record prop, or a live
+     * update / focus re-fetch rewrites the form while the user is typing.
+     */
+    return { conflict, guard, handle, isSaveBlocked, opened: open ? record : null };
 };
 
 export const StaleConflictBanner = ({ conflict }: { conflict: StaleConflict | null }) => {

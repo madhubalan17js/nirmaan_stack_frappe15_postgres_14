@@ -125,23 +125,25 @@ export const EditNonProjectExpense: React.FC<EditNonProjectExpenseProps> = ({ ex
 
     // A save refused because someone else saved first keeps this dialog open with what was typed.
     const stale = useStaleConflict({ doctype: "Non Project Expenses", record: expenseToEdit, open: editNonProjectExpenseDialog, onRefresh: onStaleRefresh });
+    // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+    const openedExpenseToEdit = (stale.opened ?? expenseToEdit) as typeof expenseToEdit;
 
     // Initialize form state when expenseToEdit or dialog visibility changes
     useEffect(() => {
         // After a conflict the form holds the user's unsaved work -- a background refetch must not reset it.
         if (stale.conflict) return;
-        if (editNonProjectExpenseDialog && expenseToEdit) {
-            setFormState(formFrom(expenseToEdit));
+        if (editNonProjectExpenseDialog && openedExpenseToEdit) {
+            setFormState(formFrom(openedExpenseToEdit));
             // Determine if sections should be initially open
             // Keyed on the STATUS: a Reconciliation Pending expense can already carry a payment ref
             // the bank import wrote, and that must neither open this section nor be cleared by it.
-            const paid = isPaidExpense(expenseToEdit.status);
+            const paid = isPaidExpense(openedExpenseToEdit.status);
             setRecordPaymentDetails(paid);
             // A Paid expense also requires its invoice, so keep both open.
-            setRecordInvoiceDetails(invoiceSectionOn(expenseToEdit));
+            setRecordInvoiceDetails(invoiceSectionOn(openedExpenseToEdit));
 
-            setExistingPaymentAttachmentUrl(expenseToEdit.payment_attachment);
-            setExistingInvoiceAttachmentUrl(expenseToEdit.invoice_attachment);
+            setExistingPaymentAttachmentUrl(openedExpenseToEdit.payment_attachment);
+            setExistingInvoiceAttachmentUrl(openedExpenseToEdit.invoice_attachment);
 
             setPaymentAttachmentAction("keep");
             setInvoiceAttachmentAction("keep");
@@ -152,7 +154,7 @@ export const EditNonProjectExpense: React.FC<EditNonProjectExpenseProps> = ({ ex
             setExpenseTypePopoverOpen(false);
             setConflictStatus(undefined);
         }
-    }, [editNonProjectExpenseDialog, expenseToEdit, stale.conflict]);
+    }, [editNonProjectExpenseDialog, openedExpenseToEdit, stale.conflict]);
 
 
     const expenseTypeFetchOptions = useMemo(() => getNonProjectExpenseTypeListOptions(), []);

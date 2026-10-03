@@ -18,7 +18,8 @@ import {
     TableMeta,
     getPaginationRowModel,
 } from '@tanstack/react-table';
-import { useFrappeDocTypeEventListener, useFrappePostCall, useSWRConfig } from 'frappe-react-sdk';
+import { useFrappePostCall } from 'frappe-react-sdk';
+import { decideLiveRefresh, shouldRefreshOnVisible, useDoctypeListUpdates } from '@/hooks/useRealtimeEvent';
 import { debounce } from 'lodash';
 import { urlStateManager } from '@/utils/urlStateManager';
 import { convertTanstackFiltersToFrappe } from '@/lib/frappeTypeUtils';
@@ -30,6 +31,10 @@ import { isCsrfError } from '@/utils/csrfUtils';
 
 // --- Configuration ---
 const DEBOUNCE_DELAY = 500;
+/** Live updates: at most one background re-fetch per table in this window (a burst collapses). */
+const LIVE_REFRESH_INTERVAL_MS = 1500;
+/** Returning to the tab re-fetches when the rows on screen are older than this. */
+const STALE_ON_RETURN_MS = 30_000;
 
 
 // --- Base SWR Key Prefix for this hook's data ---
@@ -372,9 +377,6 @@ export function useServerDataTable<TData extends { name: string }>({
     const { call: triggerFetch, loading: isCallingApi, error: apiError, reset: resetApiState } = useFrappePostCall<{ message: { data: TData[]; total_count: number; aggregates: any, group_by_result: any } }>(apiEndpoint); // Get Frappe call method from context
     const { call: triggerExportFetch } = useFrappePostCall<{ message: { data: TData[]; total_count: number; aggregates: any, group_by_result: any } }>(apiEndpoint);
 
-    // --- SWR Mutate for Cache Invalidation ---
-    const { mutate } = useSWRConfig();
-    // -----------------------------------------
     // --- State Management ---
     const [pagination, setPagination] = useState<PaginationState>(() => ({
         pageIndex: urlSyncKey ? getUrlIntParam(`${urlSyncKey}_pageIdx`, 0) : (initialState.pagination?.pageIndex ?? 0),
@@ -576,7 +578,12 @@ export function useServerDataTable<TData extends { name: string }>({
     // Use useRef to prevent fetching on initial mount if desired, or manage initial fetch state.
     // const isInitialMount = useRef(true);
 
-    const fetchData = useCallback(async (isRefetch = false) => {
+    // `silent` = a background refresh (someone else saved, or the tab came back into view): the
+    // rows stay on screen with no loading skeleton, a failure keeps the rows already shown, and
+    // its result is dropped if any newer fetch has started since.
+    const fetchSeqRef = useRef(0);
+    const lastFetchedAtRef = useRef(0);
+    const fetchData = useCallback(async (isRefetch = false, silent = false) => {
         // --- If clientData is provided, we don't fetch from backend ---
         if (isClientSideMode) {
             // console.log("[useServerDataTable] Client-side mode: Using provided clientData.");
@@ -591,10 +598,13 @@ export function useServerDataTable<TData extends { name: string }>({
         // Don't fetch if already loading, unless it's a manual refetch trigger
         if (isLoading && !isRefetch) return;
 
-        setIsLoading(true); // Set loading true when fetch starts
-        setIsAggregatesLoading(true); // Start aggregates loading
-        setError(null); // Clear previous error
-        resetApiState(); // Reset error/completion state of useFrappePostCall
+        const seq = ++fetchSeqRef.current;
+        if (!silent) {
+            setIsLoading(true); // Set loading true when fetch starts
+            setIsAggregatesLoading(true); // Start aggregates loading
+            setError(null); // Clear previous error
+            resetApiState(); // Reset error/completion state of useFrappePostCall
+        }
 
         // --- Parameter preparation for YOUR backend API ---
         const orderByForApi = sorting.length > 0
@@ -670,6 +680,8 @@ export function useServerDataTable<TData extends { name: string }>({
 
         try {
             const response = await triggerFetch(payload);
+            if (silent && seq !== fetchSeqRef.current) return; // a newer fetch owns the table
+            lastFetchedAtRef.current = Date.now();
             if (response.message) {
                 setData(response.message.data);
                 setTotalCount(response.message.total_count);
@@ -684,6 +696,11 @@ export function useServerDataTable<TData extends { name: string }>({
                 setGroupByResult(null); // NEW
             }
         } catch (err: any) {
+            if (silent) {
+                // A background refresh failing must not blank a table the user is reading.
+                console.warn(`[useServerDataTable ${doctype}] Background refresh failed; keeping the rows on screen.`, err);
+                return;
+            }
             console.error("Error fetching data via custom backend adapter:", err);
 
             // Check if this is a CSRF error and show user-friendly message
@@ -702,8 +719,10 @@ export function useServerDataTable<TData extends { name: string }>({
             setAggregates(null); // Reset on error
             setGroupByResult(null); // NEW
         } finally {
-            setIsLoading(false); // Set loading false when fetch completes
-            setIsAggregatesLoading(false); // Stop aggregates loading
+            if (!silent) {
+                setIsLoading(false); // Set loading false when fetch completes
+                setIsAggregatesLoading(false); // Stop aggregates loading
+            }
         }
     }, [
         isClientSideMode,
@@ -769,41 +788,76 @@ export function useServerDataTable<TData extends { name: string }>({
         fetchData();
     }, [fetchData, isClientSideMode]); // Dependency is the memoized fetchData function
 
-    // --- Real-time Event Listener using useFrappeEventListener ---
-    const handleRealtimeEvent = useCallback((message: any) => {
-        console.log(`[useServerDataTable ${doctype}] Socket event received:`, message?.event, message);
-        // Check if the event is relevant to the current doctype
-        if (!isClientSideMode && message?.doctype === doctype) {
-            console.log(`[useServerDataTable ${doctype}] Relevant event received. Invalidating cache and refetching.`);
+    // --- Live updates: someone created, saved or deleted a record of this doctype ---
+    // Frappe sends `list_update` to every open list of the doctype. The re-fetch is SILENT (rows
+    // stay, no skeleton, no toast — a toast per save would fire for every viewer on every save),
+    // at most one per LIVE_REFRESH_INTERVAL_MS with the last event of a burst always landing,
+    // and skipped while the tab is hidden: the tab catches up when it comes back into view.
+    const fetchDataRef = useRef(fetchData);
+    fetchDataRef.current = fetchData;
+    const liveRef = useRef<{ lastRunAt: number; pending: boolean; timer: ReturnType<typeof setTimeout> | null }>({
+        lastRunAt: 0, pending: false, timer: null,
+    });
 
-            // --- SWR Cache Invalidation ---
-            // Invalidate based on a prefix to catch all variations of filters/pagination for this list
-            // This tells SWR to mark data starting with this key pattern as stale.
-            // The second argument `false` means don't refetch immediately IF the hook isn't mounted/visible.
-            // SWR will revalidate automatically on focus or mount if data is stale.
-            // We might still want an immediate refetch if the table *is* visible.
-            // mutate(
-            //     (key) => Array.isArray(key) && key[0] === SWR_KEY_PREFIX && key[1] === apiEndpoint && key[2]?.includes(`"doctype":"${doctype}"`), // More precise invalidation if needed
-            //     undefined, // Setting data to undefined forces refetch on next render/focus
-            //     { revalidate: true } // Trigger revalidation (refetch) immediately if component is mounted
-            // );
-
-            // OR a simpler invalidation (might be less precise but often works):
-            // mutate(key => Array.isArray(key) && key[0] === SWR_KEY_PREFIX && key[1] === apiEndpoint, undefined, { revalidate: true });
-
-            // Since we manage data with useState now, we might need to directly trigger fetchData
-            fetchData(true); // Call fetchData directly to update our local state
-            toast({ title: "Data Updated", description: "Data updated successfully.", variant: "success" });
+    const runLiveRefresh = useCallback(() => {
+        const live = liveRef.current;
+        live.timer = null;
+        if (document.visibilityState === "hidden") {
+            live.pending = true;
+            return;
         }
-    }, [doctype, apiEndpoint, mutate, fetchData, isClientSideMode]); // Add fetchData to deps
+        live.pending = false;
+        live.lastRunAt = Date.now();
+        fetchDataRef.current(true, true);
+    }, []);
 
+    const handleListUpdate = useCallback(() => {
+        const live = liveRef.current;
+        const decision = decideLiveRefresh({
+            hidden: document.visibilityState === "hidden",
+            now: Date.now(),
+            lastRunAt: live.lastRunAt,
+            intervalMs: LIVE_REFRESH_INTERVAL_MS,
+        });
+        if (decision === "mark-pending") {
+            live.pending = true;
+        } else if (decision === "run-now") {
+            runLiveRefresh();
+        } else if (!live.timer) {
+            live.timer = setTimeout(runLiveRefresh, LIVE_REFRESH_INTERVAL_MS - (Date.now() - live.lastRunAt));
+        }
+    }, [runLiveRefresh]);
 
-    useFrappeDocTypeEventListener(doctype, handleRealtimeEvent);
+    useDoctypeListUpdates(isClientSideMode ? null : doctype, handleListUpdate);
+
+    // Back to the tab: catch up on a change that arrived while hidden, or on data that is simply
+    // old (a missed socket event, or a dropped connection).
+    useEffect(() => {
+        if (isClientSideMode) return;
+        const onVisibilityChange = () => {
+            if (document.visibilityState !== "visible") return;
+            if (shouldRefreshOnVisible({
+                pending: liveRef.current.pending,
+                now: Date.now(),
+                lastFetchedAt: lastFetchedAtRef.current,
+                staleAfterMs: STALE_ON_RETURN_MS,
+            })) {
+                runLiveRefresh();
+            }
+        };
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        return () => {
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+            const live = liveRef.current;
+            if (live.timer) {
+                clearTimeout(live.timer);
+                live.timer = null;
+            }
+        };
+    }, [isClientSideMode, runLiveRefresh]);
 
     // A save refused because someone else changed a record of this doctype (useStaleConflict):
     // re-fetch so the table shows their change. A ref keeps one listener for the hook's life.
-    const fetchDataRef = useRef(fetchData);
-    fetchDataRef.current = fetchData;
     useEffect(() => {
         if (isClientSideMode) return;
         const onRecordChanged = (e: Event) => {

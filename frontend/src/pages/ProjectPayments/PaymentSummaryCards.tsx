@@ -205,7 +205,8 @@
 import React, { useMemo, useEffect, useCallback, useRef } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { TailSpin } from "react-loader-spinner";
-import { useFrappeGetCall, useFrappeDocTypeEventListener } from "frappe-react-sdk";
+import { useFrappeGetCall } from "frappe-react-sdk";
+import { useDoctypeListUpdates } from "@/hooks/useRealtimeEvent";
 import { Info, Wallet, Clock, CheckCircle2, AlertCircle, CreditCard } from "lucide-react";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 
@@ -751,10 +752,10 @@ const PaymentSummaryTable: React.FC<{ totalCount: number }> = ({ totalCount }) =
         }, 300);
     }, [refetchPaymentSummary]);
 
-    useFrappeDocTypeEventListener("Project Inflows", scheduleRefetch);
-    useFrappeDocTypeEventListener("Project Expenses", scheduleRefetch);
-    useFrappeDocTypeEventListener("Non Project Expenses", scheduleRefetch);
-    useFrappeDocTypeEventListener("Non Project Inflows", scheduleRefetch);
+    useDoctypeListUpdates("Project Inflows", scheduleRefetch);
+    useDoctypeListUpdates("Project Expenses", scheduleRefetch);
+    useDoctypeListUpdates("Non Project Expenses", scheduleRefetch);
+    useDoctypeListUpdates("Non Project Inflows", scheduleRefetch);
 
     useEffect(() => () => {
         if (debounceRef.current) clearTimeout(debounceRef.current);

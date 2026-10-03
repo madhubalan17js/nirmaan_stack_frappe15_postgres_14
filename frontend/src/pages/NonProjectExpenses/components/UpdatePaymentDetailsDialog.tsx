@@ -61,6 +61,8 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
 
     // A save refused because someone else saved first keeps this dialog open with what was typed.
     const stale = useStaleConflict({ doctype: "Non Project Expenses", record: expense, open: isOpen });
+    // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+    const openedExpense = (stale.opened ?? expense) as typeof expense;
 
     const [formState, setFormState] = useState<PaymentFormState>({ payment_date: "", payment_ref: "", invoice_date: "", invoice_ref: "" });
     const [newAttachmentFile, setNewAttachmentFile] = useState<File | null>(null);
@@ -150,9 +152,9 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
     useEffect(() => {
         // After a conflict the form holds the user's unsaved work -- a background refetch must not reset it.
         if (stale.conflict) return;
-        if (isOpen && expense) {
-            setFormState(formFrom(expense));
-            setExistingAttachmentUrl(expense.payment_attachment);
+        if (isOpen && openedExpense) {
+            setFormState(formFrom(openedExpense));
+            setExistingAttachmentUrl(openedExpense.payment_attachment);
             setNewAttachmentFile(null);
             setNewInvoiceFile(null);
             setAttachmentAction("keep"); // If no existing, default to allow new upload (effectively 'remove' existing null)
@@ -161,10 +163,10 @@ export const UpdatePaymentDetailsDialog: React.FC<UpdatePaymentDetailsDialogProp
             setAutofilledFields(new Set());
             setIsAutofilling(false);
             setAmountMismatch(null);
-            // Start on the upload step unless the expense already has a payment receipt.
-            setPaymentStage(expense.payment_attachment ? "form" : "upload");
+            // Start on the upload step unless the openedExpense already has a payment receipt.
+            setPaymentStage(openedExpense.payment_attachment ? "form" : "upload");
         }
-    }, [isOpen, expense, stale.conflict]);
+    }, [isOpen, openedExpense, stale.conflict]);
 
     const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;

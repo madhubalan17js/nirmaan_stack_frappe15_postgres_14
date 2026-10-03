@@ -335,6 +335,8 @@ const EditCategoryDialog: React.FC<EditCategoryDialogProps> = ({ category, mutat
   );
   const { updateDoc, loading: updateLoading } = useFrappeUpdateDoc();
   const stale = useStaleConflict({ doctype: "Design Tracker Category", record: category, open });
+  // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+  const openedCategory = (stale.opened ?? category) as typeof category;
 
   const form = useForm<CategoryFormValues>({
     resolver: zodResolver(categoryFormSchema),
@@ -350,11 +352,11 @@ const EditCategoryDialog: React.FC<EditCategoryDialogProps> = ({ category, mutat
     if (stale.conflict) return;
     if (open) {
       form.reset({
-        category_name: category.category_name,
-        work_package_link: category.work_package || "",
+        category_name: openedCategory.category_name,
+        work_package_link: openedCategory.work_package || "",
       });
     }
-  }, [open, category, form, stale.conflict]);
+  }, [open, openedCategory, form, stale.conflict]);
 
   const onSubmit = async (values: CategoryFormValues) => {
     const nameChanged = values.category_name !== category.category_name;
@@ -632,6 +634,8 @@ const EditTaskDialog: React.FC<EditTaskDialogProps> = ({ task, mutate }) => {
   const [open, setOpen] = useState(false);
   const { updateDoc, loading } = useFrappeUpdateDoc();
   const stale = useStaleConflict({ doctype: "Design Tracker Tasks", record: task, open });
+  // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+  const openedTask = (stale.opened ?? task) as typeof task;
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(taskFormSchema),
     defaultValues: taskFormFrom(task),
@@ -642,8 +646,8 @@ const EditTaskDialog: React.FC<EditTaskDialogProps> = ({ task, mutate }) => {
   React.useEffect(() => {
     // After a conflict the form holds the user's unsaved work -- the list refresh must not reset it.
     if (stale.conflict) return;
-    if (open) form.reset(taskFormFrom(task));
-  }, [open, task, form, stale.conflict]);
+    if (open) form.reset(taskFormFrom(openedTask));
+  }, [open, openedTask, form, stale.conflict]);
 
   const onSubmit = async (values: TaskFormValues) => {
     try {

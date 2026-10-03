@@ -64,6 +64,8 @@ export const SourceFormatDialog: React.FC<Props> = ({ task, mutate }) => {
     });
     const [saving, setSaving] = useState(false);
     const stale = useStaleConflict({ doctype: 'Commission Report Tasks', record: task as any, open });
+    // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+    const openedTask = (stale.opened ?? task) as typeof task;
 
     const { updateTaskMaster } = useTaskMasterMutations();
     const { toast } = useToast();
@@ -73,11 +75,11 @@ export const SourceFormatDialog: React.FC<Props> = ({ task, mutate }) => {
         // After a conflict the form holds the user's unsaved work -- the list refresh must not reset it.
         if (stale.conflict) return;
         if (open) {
-            setSourceText(task.source_format || '');
-            setIsActive(task.is_active !== 0);
+            setSourceText(openedTask.source_format || '');
+            setIsActive(openedTask.is_active !== 0);
             setValidation({ status: 'unchecked', errors: [], warnings: [] });
         }
-    }, [open, task.source_format, task.is_active, stale.conflict]);
+    }, [open, openedTask.source_format, openedTask.is_active, stale.conflict]);
 
     const isDirty = useMemo(() => {
         const initialActive = task.is_active !== 0;

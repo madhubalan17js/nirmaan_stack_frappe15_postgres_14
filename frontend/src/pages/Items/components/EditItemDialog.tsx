@@ -65,6 +65,8 @@ export const EditItemDialog: React.FC<EditItemDialogProps> = ({ item: liveItem, 
     const { updateDoc, loading: updateLoading } = useFrappeUpdateDoc();
     // A save refused because someone else changed the product first keeps the dialog open.
     const stale = useStaleConflict({ doctype: "Items", record: item as any, open: isOpen });
+    // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+    const openedItem = (stale.opened ?? item) as typeof item;
 
     const { data: categoryList, isLoading: categoryLoading } = useFrappeGetDocList<CategoryType>(
         CATEGORY_DOCTYPE,
@@ -141,15 +143,15 @@ export const EditItemDialog: React.FC<EditItemDialogProps> = ({ item: liveItem, 
     useEffect(() => {
         // After a conflict the form holds the user's unsaved work -- the list refresh must not reset it.
         if (stale.conflict) return;
-        if (item) {
-            setItemName(item.item_name || "");
-            setSelectedUnit(item.unit_name || "");
-            setSelectedCategory(item.category || "");
-            setSelectedBillingCategory(item.billing_category || "");
-            setSelectedItemStatus(item.item_status || "");
-            setSelectedTdsItem(item.linked_tds_item || "");
+        if (openedItem) {
+            setItemName(openedItem.item_name || "");
+            setSelectedUnit(openedItem.unit_name || "");
+            setSelectedCategory(openedItem.category || "");
+            setSelectedBillingCategory(openedItem.billing_category || "");
+            setSelectedItemStatus(openedItem.item_status || "");
+            setSelectedTdsItem(openedItem.linked_tds_item || "");
         }
-    }, [item, isOpen, stale.conflict]);
+    }, [openedItem, isOpen, stale.conflict]);
 
     // A category change can move the item to a different work package, which would
     // strand a now-invalid link. Drop it rather than let the save fail server-side.

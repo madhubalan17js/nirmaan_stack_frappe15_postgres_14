@@ -363,6 +363,8 @@ const EditCategoryDialog: React.FC<EditCategoryDialogProps> = ({ category, mutat
   );
   const { updateDoc, loading: updateLoading } = useFrappeUpdateDoc();
   const stale = useStaleConflict({ doctype: "Critical PO Category", record: category as any, open });
+  // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+  const openedCategory = (stale.opened ?? category) as typeof category;
 
   const form = useForm<CategoryFormValues>({
     resolver: zodResolver(categoryFormSchema),
@@ -374,8 +376,8 @@ const EditCategoryDialog: React.FC<EditCategoryDialogProps> = ({ category, mutat
   React.useEffect(() => {
     // After a conflict the form holds the user's unsaved work -- the list refresh must not reset it.
     if (stale.conflict) return;
-    if (open) form.reset(categoryFormFrom(category));
-  }, [open, category, form, stale.conflict]);
+    if (open) form.reset(categoryFormFrom(openedCategory));
+  }, [open, openedCategory, form, stale.conflict]);
 
   const onSubmit = async (values: CategoryFormValues) => {
     const nameChanged = values.category_name !== category.category_name;
@@ -604,6 +606,8 @@ const EditItemDialog: React.FC<EditItemDialogProps> = ({ item, mutate }) => {
   const [open, setOpen] = useState(false);
   const { updateDoc, loading } = useFrappeUpdateDoc();
   const stale = useStaleConflict({ doctype: "Critical PO Items", record: item as any, open });
+  // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+  const openedItem = (stale.opened ?? item) as typeof item;
   const form = useForm<ItemFormValues>({
     resolver: zodResolver(itemFormSchema),
     defaultValues: itemFormFrom(item),
@@ -614,8 +618,8 @@ const EditItemDialog: React.FC<EditItemDialogProps> = ({ item, mutate }) => {
   React.useEffect(() => {
     // After a conflict the form holds the user's unsaved work -- the list refresh must not reset it.
     if (stale.conflict) return;
-    if (open) form.reset(itemFormFrom(item));
-  }, [open, item, form, stale.conflict]);
+    if (open) form.reset(itemFormFrom(openedItem));
+  }, [open, openedItem, form, stale.conflict]);
 
   const onSubmit = async (values: ItemFormValues) => {
     try {

@@ -53,6 +53,8 @@ export const UpdateInvoiceDetailsDialog: React.FC<UpdateInvoiceDetailsDialogProp
 
     // A save refused because someone else saved first keeps this dialog open with what was typed.
     const stale = useStaleConflict({ doctype: "Non Project Expenses", record: expense, open: isOpen });
+    // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+    const openedExpense = (stale.opened ?? expense) as typeof expense;
 
     const [formState, setFormState] = useState<InvoiceFormState>({ invoice_date: "", invoice_ref: "" });
     const [newAttachmentFile, setNewAttachmentFile] = useState<File | null>(null);
@@ -63,14 +65,14 @@ export const UpdateInvoiceDetailsDialog: React.FC<UpdateInvoiceDetailsDialogProp
     useEffect(() => {
         // After a conflict the form holds the user's unsaved work -- a background refetch must not reset it.
         if (stale.conflict) return;
-        if (isOpen && expense) {
-            setFormState(formFrom(expense));
-            setExistingAttachmentUrl(expense.invoice_attachment);
+        if (isOpen && openedExpense) {
+            setFormState(formFrom(openedExpense));
+            setExistingAttachmentUrl(openedExpense.invoice_attachment);
             setNewAttachmentFile(null);
             setAttachmentAction("keep");
             setFormErrors({});
         }
-    }, [isOpen, expense, stale.conflict]);
+    }, [isOpen, openedExpense, stale.conflict]);
 
     const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;

@@ -116,6 +116,8 @@ export function EditProjectInvoiceDialog({ invoiceToEdit, listMutate, onClose }:
 
     // A save refused because someone else saved first keeps this dialog open with what was typed.
     const stale = useStaleConflict({ doctype: DOCTYPE, record: invoiceToEdit, open: editProjectInvoiceDialog });
+    // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+    const openedInvoiceToEdit = (stale.opened ?? invoiceToEdit) as typeof invoiceToEdit;
 
     // Fetch projects and customers for display
     const { data: projects, isLoading: projectsLoading } = useFrappeGetDocList<Projects>(
@@ -134,25 +136,25 @@ export function EditProjectInvoiceDialog({ invoiceToEdit, listMutate, onClose }:
     useEffect(() => {
         // After a conflict the form holds the user's unsaved work -- a background refetch must not reset it.
         if (stale.conflict) return;
-        if (editProjectInvoiceDialog && invoiceToEdit) {
-            const project = projects?.find(p => p.name === invoiceToEdit.project);
+        if (editProjectInvoiceDialog && openedInvoiceToEdit) {
+            const project = projects?.find(p => p.name === openedInvoiceToEdit.project);
             const customerId = project?.customer || "";
             const customerName = customers?.find(c => c.name === customerId)?.company_name || "";
 
             setInvoiceData({
-                ...editableFrom(invoiceToEdit),
-                project: invoiceToEdit.project || "",
-                project_name: project?.project_name || invoiceToEdit.project || "",
+                ...editableFrom(openedInvoiceToEdit),
+                project: openedInvoiceToEdit.project || "",
+                project_name: project?.project_name || openedInvoiceToEdit.project || "",
                 customer: customerId,
                 customer_name: customerName || (customerId ? "Customer not found" : "No Customer"),
             });
             setNewAttachmentFile(null);
             setFormErrors({});
-            setExistingAttachmentUrl(invoiceToEdit.attachment);
+            setExistingAttachmentUrl(openedInvoiceToEdit.attachment);
             setAttachmentAction("keep");
             setIsProjectValid(!!customerId);
 
-            if (!customerId && invoiceToEdit.project) {
+            if (!customerId && openedInvoiceToEdit.project) {
                 toast({
                     title: "Warning",
                     description: "The associated project does not have a customer linked.",
@@ -160,7 +162,7 @@ export function EditProjectInvoiceDialog({ invoiceToEdit, listMutate, onClose }:
                 });
             }
         }
-    }, [editProjectInvoiceDialog, invoiceToEdit, projects, customers, stale.conflict]);
+    }, [editProjectInvoiceDialog, openedInvoiceToEdit, projects, customers, stale.conflict]);
 
     const handleDialogClose = () => {
         setEditProjectInvoiceDialog(false);

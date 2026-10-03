@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { fetchStaleInfo, isStaleRecordError, STALE_MESSAGE_METHOD, STALE_RECORD_MESSAGE } from "@/utils/frappeErrors";
 
-import { changedFields, conflictHeadline, followAttachment, formSignature, resolveConflict, takeLatest } from "./useStaleConflict";
+import { changedFields, conflictHeadline, followAttachment, formSignature, pinOpenedRecord, resolveConflict, takeLatest } from "./useStaleConflict";
 
 const base = {
     name: "EXP-1",
@@ -274,4 +274,55 @@ describe("Save again buttons call isSaveBlocked FIRST (its photo must be taken a
     it("the scan sees the real call sites (guards against a scan that finds nothing)", () => {
         expect(screens().length).toBeGreaterThanOrEqual(18);
     }, 60_000);
+
+    // A refill effect keyed on the LIVE record prop rewrites the form whenever the list behind the
+    // dialog updates (live update, focus re-fetch) -- it must be keyed on the pinned `stale.opened`.
+    it("no screen refills its form from the live record prop", () => {
+        const offenders: string[] = [];
+        for (const { path, text } of screens()) {
+            for (const call of text.matchAll(/useStaleConflict\(\{[^\n]*record:\s*([A-Za-z_]\w*)/g)) {
+                const rec = call[1];
+                const effects = text.matchAll(/useEffect\(\s*\(\)\s*=>\s*\{([\s\S]*?)\}\s*,\s*\[([^\]]*)\]\s*\)/g);
+                for (const [, body, deps] of effects) {
+                    const live = [...deps.matchAll(new RegExp(`\\b${rec}\\b(\\.\\w+)?`, "g"))].map((m) => m[1] ?? "");
+                    if (live.length && !live.every((p) => p === ".name") && /reset\(|set[A-Z]\w*\(/.test(body)) offenders.push(`${path} (${rec})`);
+                }
+            }
+        }
+        expect(offenders).toEqual([]);
+    }, 60_000);
+});
+
+describe("pinOpenedRecord", () => {
+    const v1 = { name: "PAYIN-1", modified: "2026-10-03 10:00:00", amount: 100 };
+    const v2 = { name: "PAYIN-1", modified: "2026-10-03 10:05:00", amount: 200 };
+
+    it("keeps the version the form loaded when a newer copy of the same record arrives", () => {
+        // The bug: a live update handed the open dialog v2, its save carried v2's version with v1's
+        // values, and the server accepted it -- silently overwriting the other person's change.
+        const pinned = pinOpenedRecord(null, true, v1);
+        expect(pinOpenedRecord(pinned, true, v2)).toBe(v1);
+    });
+
+    it("forgets the pin when the dialog closes, so the next open takes the latest", () => {
+        const pinned = pinOpenedRecord(null, true, v1);
+        const closed = pinOpenedRecord(pinned, false, v2);
+        expect(closed).toBeNull();
+        expect(pinOpenedRecord(closed, true, v2)).toBe(v2);
+    });
+
+    it("moves to another record opened in the same dialog", () => {
+        const other = { name: "PAYIN-2", modified: "2026-10-03 09:00:00" };
+        expect(pinOpenedRecord(pinOpenedRecord(null, true, v1), true, other)).toBe(other);
+    });
+
+    it("waits for a record that is still loading, then pins the first one that arrives", () => {
+        const loading = pinOpenedRecord<typeof v1>(null, true, undefined);
+        expect(loading).toBeNull();
+        expect(pinOpenedRecord(loading, true, v1)).toBe(v1);
+    });
+
+    it("keeps the pin if the record briefly disappears (a re-fetch in flight)", () => {
+        expect(pinOpenedRecord(v1, true, null)).toBe(v1);
+    });
 });

@@ -107,6 +107,8 @@ export const EditInflowPayment: React.FC<EditInflowPaymentProps> = ({ inflowToEd
 
     // A save refused because someone else saved first keeps this dialog open with what was typed.
     const stale = useStaleConflict({ doctype: "Project Inflows", record: inflowToEdit, open: editInflowDialog });
+    // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+    const openedInflowToEdit = (stale.opened ?? inflowToEdit) as typeof inflowToEdit;
 
     const { data: projects, isLoading: projectsLoading } = useFrappeGetDocList<Projects>("Projects", getProjectListOptions({ fields: ["name", "project_name", "customer"] }) as any, queryKeys.projects.list());
     const { data: customers, isLoading: customersLoading } = useFrappeGetDocList<Customers>("Customers", getCustomerListOptions({ fields: ["name", "company_name"] }) as any, queryKeys.customers.list());
@@ -114,35 +116,35 @@ export const EditInflowPayment: React.FC<EditInflowPaymentProps> = ({ inflowToEd
     useEffect(() => {
         // After a conflict the form holds the user's unsaved work -- a background refetch must not reset it.
         if (stale.conflict) return;
-        if (editInflowDialog && inflowToEdit) {
+        if (editInflowDialog && openedInflowToEdit) {
             setFormState({
-                project: inflowToEdit.project || "",
-                customer: inflowToEdit.customer || "",
+                project: openedInflowToEdit.project || "",
+                customer: openedInflowToEdit.customer || "",
                 project_name: "",
                 customer_name: "",
-                ...editableFrom(inflowToEdit),
+                ...editableFrom(openedInflowToEdit),
             });
-            setExistingAttachmentUrl(inflowToEdit.inflow_attachment);
+            setExistingAttachmentUrl(openedInflowToEdit.inflow_attachment);
             setAttachmentAction("keep");
             setNewPaymentScreenshot(null);
             setFormErrors({});
-            setIsProjectValid(!!inflowToEdit.customer);
+            setIsProjectValid(!!openedInflowToEdit.customer);
 
-            const currentProject = projects?.find(p => p.name === inflowToEdit.project);
+            const currentProject = projects?.find(p => p.name === openedInflowToEdit.project);
             if (currentProject) {
                 setProjectName(currentProject.project_name);
                 const currentCustomer = customers?.find(c => c.name === currentProject.customer);
                 setCustomerName(currentCustomer?.company_name || (currentProject.customer ? "Customer not found" : "No Customer"));
                 setFormState(prev => ({ ...prev, customer: currentProject.customer || "", project_name: currentProject.project_name, customer_name: currentCustomer?.company_name || "" }));
-            } else if (inflowToEdit.project) {
-                setProjectName(inflowToEdit.project);
-                setFormState(prev => ({ ...prev, project_name: inflowToEdit.project }));
+            } else if (openedInflowToEdit.project) {
+                setProjectName(openedInflowToEdit.project);
+                setFormState(prev => ({ ...prev, project_name: openedInflowToEdit.project }));
             }
-            if (!currentProject?.customer && inflowToEdit.project) {
+            if (!currentProject?.customer && openedInflowToEdit.project) {
                 toast({ title: "Warning", description: "The associated project does not have a customer linked. This inflow might be problematic.", variant: "default" });
             }
         }
-    }, [editInflowDialog, inflowToEdit, projects, customers, toast, stale.conflict]);
+    }, [editInflowDialog, openedInflowToEdit, projects, customers, toast, stale.conflict]);
 
     const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;

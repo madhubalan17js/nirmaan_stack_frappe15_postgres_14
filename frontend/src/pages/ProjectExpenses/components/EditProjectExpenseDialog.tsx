@@ -126,18 +126,20 @@ export const EditProjectExpenseDialog: React.FC<EditProjectExpenseDialogProps> =
 
     // A save refused because someone else saved first keeps this dialog open with what was typed.
     const stale = useStaleConflict({ doctype: DOCTYPE, record: expenseToEdit, open: editProjectExpenseDialog, onRefresh: onStaleRefresh });
+    // The record as the form loaded it -- a live update or focus re-fetch must not refill the form.
+    const openedExpenseToEdit = (stale.opened ?? expenseToEdit) as typeof expenseToEdit;
 
     useEffect(() => {
         // After a conflict the form holds the user's unsaved work -- a background refetch must not reset it.
         if (stale.conflict) return;
-        if (editProjectExpenseDialog && expenseToEdit) {
-            setFormState(formFrom(expenseToEdit));
+        if (editProjectExpenseDialog && openedExpenseToEdit) {
+            setFormState(formFrom(openedExpenseToEdit));
             setNewInvoiceFile(null);
             setNewPaymentFile(null);
             setFormErrors({});
             setExpenseTypePopoverOpen(false);
         }
-    }, [editProjectExpenseDialog, expenseToEdit, stale.conflict]);
+    }, [editProjectExpenseDialog, openedExpenseToEdit, stale.conflict]);
 
     useEffect(() => {
         const commandListElement = commandListRef.current;
