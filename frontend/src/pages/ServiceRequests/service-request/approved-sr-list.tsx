@@ -44,7 +44,6 @@ import { Projects } from "@/types/NirmaanStack/Projects";
 import { ItemsHoverCard } from "@/components/helpers/ItemsHoverCard";
 import { NameWithLinkIcon } from "@/components/helpers/NameWithLinkIcon";
 import { useVendorsList } from "@/pages/ProcurementRequests/VendorQuotesSelection/hooks/useVendorsList";
-import { useUsersList } from "@/pages/ProcurementRequests/ApproveNewPR/hooks/useUsersList";
 import { SRRemarksPopover } from "@/pages/ServiceRequests/service-request/components/SRRemarksPopover";
 import { getProjectListOptions, queryKeys } from "@/config/queryKeys";
 import { parseNumber } from "@/utils/parseNumber";
@@ -111,11 +110,6 @@ export const ApprovedSRList: React.FC<ApprovedSRListProps> = ({
     error: vendorsError,
   } = useVendorsList({ vendorTypes: ["Service", "Material & Service"] });
 
-  const {
-    data: userList,
-    isLoading: userListLoading,
-    error: userError,
-  } = useUsersList(); // For owner display
   const { notifications, mark_seen_notification } = useNotificationStore();
 
   // --- Memoized Options & Calculations ---
@@ -509,7 +503,6 @@ export const ApprovedSRList: React.FC<ApprovedSRListProps> = ({
       notifications,
       projectOptions,
       vendorOptions,
-      userList,
       handleNewSRSeen,
       getVendorName,
       for_vendor,
@@ -581,12 +574,10 @@ export const ApprovedSRList: React.FC<ApprovedSRListProps> = ({
   // --- Combined Loading & Error States ---
   const isLoading =
     projectsLoading ||
-    vendorsLoading ||
-    userListLoading;
+    vendorsLoading;
   const combinedError =
     projectsError ||
     vendorsError ||
-    userError ||
     listError;
 
   // --- CEO Hold Row Highlighting ---

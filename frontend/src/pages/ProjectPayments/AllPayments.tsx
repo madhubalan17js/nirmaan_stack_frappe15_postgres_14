@@ -51,7 +51,6 @@ import { Projects } from "@/types/NirmaanStack/Projects";
 import { ProcurementOrder } from "@/types/NirmaanStack/ProcurementOrders";
 import { ServiceRequests } from "@/types/NirmaanStack/ServiceRequests";
 import { DOC_TYPES } from "./approve-payments/constants";
-import { useUsersList } from "../ProcurementRequests/ApproveNewPR/hooks/useUsersList";
 
 // --- Helper Components ---
 import { useVendorsList } from "../ProcurementRequests/VendorQuotesSelection/hooks/useVendorsList";
@@ -232,7 +231,6 @@ export const AllPayments: React.FC<AllPaymentsProps> = ({
         { fields: ["name", "total_amount", "gst"], limit: 0 },
         'SRs_AllPay'
     );
-    const { data: userList, isLoading: userListLoading, error: userError } = useUsersList();
 
 
     // --- Memoized Lookups & Calculations ---
@@ -309,12 +307,6 @@ export const AllPayments: React.FC<AllPaymentsProps> = ({
     // Was a 179-line inline block threaded with `tab === "Payments Done"` ternaries.
     // Now a registry + a per-tab id array, so a column has ONE definition and the
     // array is the order. See config/approvalsTable.config.ts (TAB_COLUMNS).
-    const userLabelMap = useMemo(() => {
-        const m = new Map<string, string>();
-        for (const u of userList ?? []) m.set(u.name, (u as any).full_name || u.name);
-        return m;
-    }, [userList]);
-
     const vendorLabelMap = useMemo(() => {
         const m = new Map<string, string>();
         for (const o of vendorOptions) m.set(o.value, o.label);
@@ -383,7 +375,6 @@ export const AllPayments: React.FC<AllPaymentsProps> = ({
         tab: approvalTab,
         projectLabels: projectMap,
         vendorLabels: vendorLabelMap,
-        userLabels: userLabelMap,
         getDocumentTotal,
         getPoAmountDelivered,
         onEdit: canWork ? setEditRow : undefined,
@@ -407,7 +398,7 @@ export const AllPayments: React.FC<AllPaymentsProps> = ({
             notifications.find((n) => n.docname === row.name && n.seen === "false")
         ),
     }), [
-        tab, isByMe, view, projectMap, vendorLabelMap, userLabelMap, getDocumentTotal,
+        tab, isByMe, view, projectMap, vendorLabelMap, getDocumentTotal,
         getPoAmountDelivered, canWork, canUploadInvoices, role, notifications, editableStatuses,
         handleSeenNotification, openPayDialog,
     ]);
@@ -476,7 +467,6 @@ export const AllPayments: React.FC<AllPaymentsProps> = ({
         selectedSearchField,
         projectLabels: projectMap,
         vendorLabels: vendorLabelMap,
-        userLabels: userLabelMap,
         // Not in Raised By Me's Paid / Rejected views: their status is one value.
         includeStatus: ([PP_TABS.PAYMENTS_PENDING, PP_TABS.ALL_PAYMENTS] as string[]).includes(tab)
             || (isByMe && view === BY_ME_VIEWS.ALL),
@@ -560,12 +550,12 @@ export const AllPayments: React.FC<AllPaymentsProps> = ({
     );
 
     // --- Combined Loading & Error States ---
-    const isLoadingOverall = projectsLoading || vendorsLoading || userListLoading || poLoading || srLoading || listIsLoading;
+    const isLoadingOverall = projectsLoading || vendorsLoading || poLoading || srLoading || listIsLoading;
     // Skeleton on the first load only: `listIsLoading` is true on every refetch, and swapping
     // the DataTable out then unmounts the search box mid-typing. The table shows its own row
     // skeleton while it refetches.
     const hasLoadedOnce = useHasLoadedOnce(isLoadingOverall);
-    const combinedErrorOverall = projectsError || vendorsError || poError || srError || userError || listError;
+    const combinedErrorOverall = projectsError || vendorsError || poError || srError || listError;
 
     if (combinedErrorOverall) {
         <AlertDestructive error={combinedErrorOverall} />
@@ -693,7 +683,7 @@ export const AllPayments: React.FC<AllPaymentsProps> = ({
                                         </div>
                                         {deleteRow.raised_by !== user_id && (
                                             <div className="text-muted-foreground">
-                                                Created by {userLabelMap.get(deleteRow.raised_by) || deleteRow.raised_by}
+                                                Created by {deleteRow.raised_by_name || deleteRow.raised_by}
                                             </div>
                                         )}
                                     </div>

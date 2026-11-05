@@ -102,6 +102,8 @@ export interface ApprovalQueueRow {
   vendor: string;
   project: string;
   raised_by: string;
+  /** Display only: who raised it, by name (Nirmaan Users full name, else the email), sent by the queue API. */
+  raised_by_name?: string;
   /** The Expense Request an expense came from; blank on a Direct Expense and on a payment (#1472). */
   request_id: string;
   /** Why a PO / WO payment was rejected (`Project Payments.rejection_reason`): the 30-day rule's reason or the one
