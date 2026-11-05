@@ -39,7 +39,7 @@ import {
 import { rejectionFields } from "./rejectReason";
 import PaymentSummaryCards from "../PaymentSummaryCards";
 import { useUserData } from "@/hooks/useUserData";
-import { canViewPaymentSummary } from "@/constants/roles";
+import { CHEQUE_ACCESS_PROFILES, canViewPaymentSummary } from "@/constants/roles";
 
 // --- Hooks & Utils ---
 import { Row } from "@tanstack/react-table";
@@ -416,6 +416,7 @@ export const ApprovePayments: React.FC<ApprovePaymentsProps> = ({ readOnly = fal
         : (row) => openDialog(row as unknown as ProjectPayments, DIALOG_ACTION_TYPES.REJECT),
       onEdit: canWork ? setEditRow : undefined,
       canEdit: (row) => canEditQueueRow(row, editableStatuses),
+      canOpenCheque: CHEQUE_ACCESS_PROFILES.includes(role),
     }),
     [
       activeTab,

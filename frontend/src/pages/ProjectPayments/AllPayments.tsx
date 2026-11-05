@@ -68,7 +68,7 @@ import { useDialogStore } from "@/zustand/useDialogStore";
 
 import PaymentSummaryCards from "./PaymentSummaryCards"
 import { useRefreshApprovalCounts } from "./hooks/useRefreshApprovalCounts"
-import { canViewPaymentSummary } from "@/constants/roles"
+import { CHEQUE_ACCESS_PROFILES, canViewPaymentSummary } from "@/constants/roles"
 import { useToast } from "@/components/ui/use-toast"
 import { getFrappeError } from "@/utils/frappeErrors"
 import { formatToRoundedIndianRupee } from "@/utils/FormatPrice"
@@ -398,6 +398,7 @@ export const AllPayments: React.FC<AllPaymentsProps> = ({
         canUploadInvoice: (row) => canUploadInvoiceRow(row, role),
         // Raised By Me → Rejected: the PO / WO page is where a rejected payment is deleted to free its term.
         linkOrderPage: isByMe && view === BY_ME_VIEWS.REJECTED,
+        canOpenCheque: CHEQUE_ACCESS_PROFILES.includes(role),
         isUnseen: (row) => !!notifications.find(
             (n) => n.docname === row.name && n.seen === "false"
                 && n.event_id === (tab === "Payments Done" ? "payment:fulfilled" : null)

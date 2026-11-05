@@ -20,6 +20,8 @@ import { TruncatedText } from "@/components/common/TruncatedText";
 import { ChequeChip } from "@/components/cheques/ChequeChip";
 import { useChequeChips } from "@/components/cheques/useChequeChips";
 import { showsChequeChip } from "@/utils/cheques/chequeChip";
+import { CHEQUE_ACCESS_PROFILES } from "@/constants/roles";
+import { useUserData } from "@/hooks/useUserData";
 import { PAYMENT_STATUS } from "@/constants/paymentStatus";
 import { cn } from "@/lib/utils";
 import { orderPageHref } from "@/pages/ProjectPayments/components/poRoute";
@@ -99,15 +101,18 @@ const PaymentChequeOr = ({
   payment,
   table,
   fallback,
+  canOpenCheque,
 }: {
   payment: ProjectPayments;
   table: Table<ProjectPayments>;
   fallback: React.ReactNode;
+  /** May the viewer open the Cheque (`CHEQUE_ACCESS_PROFILES`); worked out once by the table. */
+  canOpenCheque: boolean;
 }) => {
   const chips = useChequeChips(table.getRowModel().rows.map((r) => r.original.cheque));
   const chip = payment.cheque ? chips[payment.cheque] : undefined;
   if (!showsChequeChip({ ...payment, cheque_status: chip?.status })) return <>{fallback}</>;
-  return <ChequeChip cheque={payment.cheque} chequeNo={chip?.cheque_no || payment.cheque_no || ""} status={chip?.status} />;
+  return <ChequeChip cheque={payment.cheque} chequeNo={chip?.cheque_no || payment.cheque_no || ""} status={chip?.status} canOpen={canOpenCheque} />;
 };
 
 /**
@@ -155,6 +160,8 @@ export const VendorPaymentsTable: React.FC<VendorPaymentsTableProps> = ({
 }) => {
   // The paid payment whose receipt is being attached (the paperclip in its UTR cell).
   const [attaching, setAttaching] = useState<ProjectPayments | null>(null);
+  const { role } = useUserData();
+  const canOpenCheque = CHEQUE_ACCESS_PROFILES.includes(role);
 
   const columns = useMemo<ColumnDef<ProjectPayments>[]>(() => {
     const referenceDoc: ColumnDef<ProjectPayments> = {
@@ -213,7 +220,7 @@ export const VendorPaymentsTable: React.FC<VendorPaymentsTableProps> = ({
             const utr = <UtrWithReceipt payment={payment} onAttach={() => setAttaching(payment)} />;
             return (
               <div className="font-medium min-w-[150px]">
-                {payment.cheque_no ? <PaymentChequeOr payment={payment} table={table} fallback={utr} /> : utr}
+                {payment.cheque_no ? <PaymentChequeOr payment={payment} table={table} fallback={utr} canOpenCheque={canOpenCheque} /> : utr}
               </div>
             );
           },
@@ -250,6 +257,7 @@ export const VendorPaymentsTable: React.FC<VendorPaymentsTableProps> = ({
                 payment={row.original}
                 table={table}
                 fallback={<span className="font-medium">Cheque {row.original.cheque_no}</span>}
+                canOpenCheque={canOpenCheque}
               />
             </div>
           ),
@@ -316,6 +324,7 @@ export const VendorPaymentsTable: React.FC<VendorPaymentsTableProps> = ({
               payment={payment}
               table={table}
               fallback={<span className="text-sm">Cheque {payment.cheque_no}</span>}
+              canOpenCheque={canOpenCheque}
             />
           );
         },
@@ -333,7 +342,7 @@ export const VendorPaymentsTable: React.FC<VendorPaymentsTableProps> = ({
         size: 170,
       },
     ];
-  }, [group, projectOptions]);
+  }, [group, projectOptions, canOpenCheque]);
 
   const searchableFields = SEARCH_FIELDS[group];
 
