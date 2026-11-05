@@ -9,11 +9,12 @@
  * configured day does not exist in that month (e.g. the 31st in February), a `due_note`
  * telling the user the real month-end deadline. This component only renders that state.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { useSocketEventListener } from "@/lib/frappe";
 import { BellRing, ChevronDown, Check, AlertTriangle, History } from "lucide-react";
 import { formatDate } from "@/utils/FormatDate";
+import { useListUpdate } from "@/hooks/useListUpdate";
 import { cn } from "@/lib/utils";
 import { CompletedRemindersDialog } from "./CompletedRemindersDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -104,12 +105,18 @@ export function RemindersSection({ className }: { className?: string } = {}) {
     }
   };
 
-  // Real-time listener: refetches the list whenever ANY log is created or updated
-  useSocketEventListener("list_update", (d: any) => {
-    if (d?.doctype === "Reminder Schedule Log") {
-      mutate();
-    }
-  });
+  // Live refresh. A log raised or marked done arrives as its doctype's `list_update`: everyone who gets reminders
+  // (Admin, Accountant Lead, Accountant) can read the log doctype, so `useListUpdate` may join its room. A
+  // schedule change arrives as `reminder_logs_updated`, which the server sends to every System User.
+  // A log save sends both, so the two are folded into one refetch.
+  const refreshTimer = useRef<number>();
+  const refreshSoon = () => {
+    window.clearTimeout(refreshTimer.current);
+    refreshTimer.current = window.setTimeout(() => mutate(), 300);
+  };
+  useEffect(() => () => window.clearTimeout(refreshTimer.current), []);
+  useListUpdate("Reminder Schedule Log", refreshSoon);
+  useSocketEventListener("reminder_logs_updated", refreshSoon);
 
   return (
     <div className={cn("mt-6 border-t border-gray-200 pt-5", className)}>
