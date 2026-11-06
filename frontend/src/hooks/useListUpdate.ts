@@ -1,22 +1,27 @@
-import { useDocTypeEventListener } from "@/lib/frappe";
+import { FrappeConfig, FrappeContext } from "frappe-react-sdk";
+import { useContext, useEffect, useRef } from "react";
 
-/** What Frappe sends with `list_update` (`frappe/model/document.py` notify_update): on insert, save and delete. */
-export interface ListUpdateMessage {
-    doctype: string;
-    name: string;
-    user: string;
-}
+import { subscribeListUpdate, type ListUpdateMessage } from "./realtime/listUpdateHub";
+
+export type { ListUpdateMessage };
 
 /**
  * Runs `onUpdate` for every `list_update` of `doctype`: a document of it was inserted, saved or deleted.
  *
- * A thin layer over `useDocTypeEventListener` (`@/lib/frappe`, #1670), which owns the socket work: it removes
- * only its own handler, picks up a new `onUpdate` without touching the socket, and leaves the doctype's room only
- * when its last listener on this socket unmounts. `list_update` arrives for every doctype room this tab is in, so
- * this keeps only the events of `doctype`. `onUpdate` may change on every render.
+ * Built on the shared `listUpdateHub`, not the SDK's `useFrappeDocTypeEventListener`: the SDK's clean-up removes
+ * every screen's `list_update` listener (Speed Plan bug B1). The hub counts the screens on each doctype, so any
+ * number of these may share one doctype, and one closing never cuts another off. `onUpdate` may change on every
+ * render; the subscription is made once per socket and doctype.
  */
 export const useListUpdate = (doctype: string, onUpdate: (message: ListUpdateMessage) => void) => {
-    useDocTypeEventListener(doctype, (message) => {
-        if (message?.doctype === doctype) onUpdate(message);
+    const { socket } = useContext(FrappeContext) as FrappeConfig;
+    const onUpdateRef = useRef(onUpdate);
+    useEffect(() => {
+        onUpdateRef.current = onUpdate;
     });
+
+    useEffect(() => {
+        if (!socket) return;
+        return subscribeListUpdate(socket, doctype, { onUpdate: message => onUpdateRef.current(message) });
+    }, [socket, doctype]);
 };
