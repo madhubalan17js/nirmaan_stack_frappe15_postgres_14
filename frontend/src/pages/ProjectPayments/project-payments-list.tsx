@@ -23,7 +23,7 @@ import formatToIndianRupee, { formatToRoundedIndianRupee } from "@/utils/FormatP
 import { parseNumber } from "@/utils/parseNumber";
 import { NotificationType, useNotificationStore } from "@/zustand/useNotificationStore";
 import { Filter, FrappeConfig, FrappeContext, FrappeDoc, useFrappeCreateDoc, useFrappeFileUpload, useFrappeGetDocList, useFrappePostCall } from "frappe-react-sdk";
-import { useDocTypeEventListener } from "@/lib/frappe";
+import { useListUpdate } from "@/hooks/useListUpdate";
 import { debounce, memoize } from "lodash";
 import { SquarePlus } from "lucide-react";
 import { useCallback, useContext, useMemo, useState } from "react";
@@ -143,11 +143,11 @@ export const ProjectPaymentsList: React.FC<{ projectId?: string, customerId?: st
     // current by the Vendor Invoices doc events), fetched with the orders above — and the whole-invoice-table
     // fetch that used to live here (5,164 rows on every page open) is gone.
 
-    useDocTypeEventListener("Procurement Orders", async () => {
+    useListUpdate("Procurement Orders", async () => {
         await poMutate();
     });
 
-    useDocTypeEventListener("Service Requests", async () => {
+    useListUpdate("Service Requests", async () => {
         await srMutate();
     });
 

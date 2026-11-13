@@ -23,7 +23,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
-import { useDocTypeEventListener } from "@/lib/frappe";
+import { useListUpdate } from "@/hooks/useListUpdate";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { TailSpin } from "react-loader-spinner";
@@ -160,7 +160,7 @@ export const InvoiceSummaryCards: React.FC = () => {
         }, 400);
     }, [refetch]);
 
-    useDocTypeEventListener("Vendor Invoices", scheduleRefetch);
+    useListUpdate("Vendor Invoices", scheduleRefetch);
 
     useEffect(
         () => () => {

@@ -1,5 +1,5 @@
-import {  useFrappeGetDocList, useFrappeUpdateDoc, useSWRConfig, useFrappeGetDoc } from "frappe-react-sdk"
-import { useDocTypeEventListener } from "@/lib/frappe"
+import { useFrappeGetDocList, useFrappeUpdateDoc, useSWRConfig, useFrappeGetDoc } from "frappe-react-sdk"
+import { useListUpdate } from "@/hooks/useListUpdate"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { ButtonLoading } from "@/components/ui/button-loading"
@@ -28,7 +28,7 @@ export const AddVendorCategories = ({vendor_id, isSheet = false}) => {
             limit: 1000
     });
 
-    useDocTypeEventListener("Vendor Category", async () => {
+    useListUpdate("Vendor Category", async () => {
         await vendor_category_mutate()
     })
 

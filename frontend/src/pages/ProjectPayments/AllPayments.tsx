@@ -1,7 +1,6 @@
 import React, { useCallback, useContext, useMemo, useState } from "react";
 import { Row } from "@tanstack/react-table";
 import { FrappeConfig, FrappeContext, useFrappeGetDocList, Filter, FrappeDoc, useFrappeDeleteDoc, useFrappePostCall } from "frappe-react-sdk";
-import { useDocTypeEventListener } from "@/lib/frappe";
 import memoize from 'lodash/memoize';
 
 // --- UI Components ---
@@ -17,6 +16,7 @@ import { useHasLoadedOnce } from '@/hooks/useHasLoadedOnce';
 import { usePublishRefetch, type RefetchRef } from '@/hooks/usePublishRefetch';
 import {
     APPROVAL_QUEUE_API,
+    APPROVAL_QUEUE_EXPENSE_DOCTYPES,
     APPROVAL_FETCH_FIELDS,
     TYPE_LABEL,
     APPROVAL_DATE_COLUMNS,
@@ -456,6 +456,8 @@ export const AllPayments: React.FC<AllPaymentsProps> = ({
         defaultSort: isByMe ? BY_ME_VIEW_SORT[view] : TAB_DEFAULT_SORT[approvalTab],
         enableRowSelection: false,
         additionalFilters: staticFilters,
+        // Expense rows are in this table too: their changes refresh it as quietly as a payment's.
+        liveRefreshDoctypes: APPROVAL_QUEUE_EXPENSE_DOCTYPES,
     });
 
     // Status varies only on the mixed-status tabs, so the facet is offered there. Called AFTER
@@ -484,18 +486,6 @@ export const AllPayments: React.FC<AllPaymentsProps> = ({
 
     // --- CEO Hold Row Highlighting ---
 
-    // ⚠️ THE TABLE ONLY SELF-REFRESHES FOR ITS NOMINAL DOCTYPE.
-    //
-    // `useServerDataTable` ends with `useDocTypeEventListener(doctype, ...)`
-    // (hooks/useServerDataTable.ts:795) and we pass "Project Payments" — so a new or
-    // changed EXPENSE never reaches it, even though expense rows are in this table.
-    // These two listeners close that gap for both expense ledgers.
-    //
-    // (An earlier attempt invalidated by SWR key instead. That was dead code: this
-    // table fetches through `useFrappePostCall`, which registers no SWR entry at all,
-    // and every mutate() in the hook is commented out.)
-    useDocTypeEventListener("Project Expenses", () => refetch());
-    useDocTypeEventListener("Non Project Expenses", () => refetch());
     usePublishRefetch(refetchRef, refetch);
 
     const handleConfirmDelete = useCallback(async () => {

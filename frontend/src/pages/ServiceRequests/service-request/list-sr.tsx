@@ -16,7 +16,7 @@ import {
   FrappeContext,
   useFrappeGetDocList,
 } from "frappe-react-sdk";
-import { useDocTypeEventListener } from "@/lib/frappe";
+import { useListUpdate } from "@/hooks/useListUpdate";
 import { useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { formatDate } from "@/utils/FormatDate";
@@ -54,7 +54,7 @@ export default function ListSR() {
     }
   );
 
-  useDocTypeEventListener("Service Requests", async (event) => {
+  useListUpdate("Service Requests", async (event) => {
     await srListMutate();
   });
 

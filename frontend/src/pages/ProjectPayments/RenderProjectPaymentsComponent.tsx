@@ -6,8 +6,9 @@ import { useDocCountStore } from "@/zustand/useDocCountStore";
 import { APPROVAL_COUNTS_API, APPROVAL_COUNTS_SWR_KEY, APPROVAL_STATUS } from "./config/approvalsTable.config";
 import React, { Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useFrappeGetCall, useFrappeGetDocCount } from "frappe-react-sdk";
-import { FrappeContext, useDocTypeEventListener, useSWRConfig } from "@/lib/frappe";
+import { FrappeContext, useSWRConfig } from "@/lib/frappe";
 import { PAYMENT_SUMMARY_API, PAYMENT_SUMMARY_SWR_KEY } from "./config/paymentSummaryKey";
+import { useListUpdate } from "@/hooks/useListUpdate";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
 // --- Tab Configuration ---
@@ -68,9 +69,9 @@ export const RenderProjectPaymentsComponent: React.FC = () => {
         if (countsDebounceRef.current) clearTimeout(countsDebounceRef.current);
         countsDebounceRef.current = setTimeout(() => { mutateQueueCounts(); }, 500);
     }, [mutateQueueCounts]);
-    useDocTypeEventListener("Project Payments", scheduleCountsRefresh);
-    useDocTypeEventListener("Project Expenses", scheduleCountsRefresh);
-    useDocTypeEventListener("Non Project Expenses", scheduleCountsRefresh);
+    useListUpdate("Project Payments", scheduleCountsRefresh);
+    useListUpdate("Project Expenses", scheduleCountsRefresh);
+    useListUpdate("Non Project Expenses", scheduleCountsRefresh);
     useEffect(() => () => {
         if (countsDebounceRef.current) clearTimeout(countsDebounceRef.current);
     }, []);
@@ -114,7 +115,7 @@ export const RenderProjectPaymentsComponent: React.FC = () => {
         "GST Payment Request", [["status", "=", "Pending"]], false,
         canDecideGst ? "gst-requests-pending-count" : null,
     );
-    useDocTypeEventListener("GST Payment Request", () => { if (canDecideGst) mutateGstWaiting(); });
+    useListUpdate("GST Payment Request", () => { if (canDecideGst) mutateGstWaiting(); });
     // A GST approval creates an Approved payment, which moves the Payment Summary's figures. The summary is READ
     // on the decision and put in the cache, so its cards are current the moment another tab opens (they showed the
     // figures from before the approval for a second). A bare mutate(key) would not do it: the cards are not on
