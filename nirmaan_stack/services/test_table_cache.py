@@ -498,6 +498,40 @@ class TestTableCache(FrappeTestCase):
         frappe.db.commit()
         self.assertEqual(self.todo_version(), before + 1)
 
+    # ---- 18 Nov test R2: the version moves before the live refresh goes out ------------------------------------
+
+    def version_when_the_live_refresh_goes_out(self, name, text):
+        """Save the ToDo, queue a step after it (as Work Order notify() queues its phone pushes), and commit.
+        Returns what ran after the commit, in order, with the ToDo version at the moment Frappe would send its
+        live refresh (`flush_realtime_log`, queued by the save's notify_update)."""
+        ran = []
+
+        def refresh_goes_out():  # stands in for Frappe's sender; sends nothing
+            ran.append(("live refresh", self.todo_version()))
+            if hasattr(frappe.local, "_realtime_log"):
+                del frappe.local._realtime_log
+
+        if hasattr(frappe.local, "_realtime_log"):
+            del frappe.local._realtime_log  # left by an earlier save in this process: the save must queue a new one
+        with patch("frappe.realtime.flush_realtime_log", refresh_goes_out):
+            frappe.get_doc("ToDo", name).update({"description": text}).save(ignore_permissions=True)
+            frappe.db.after_commit.add(lambda: ran.append(("slow step", self.todo_version())))
+            frappe.db.commit()
+        return ran
+
+    def test_a_watched_save_moves_the_version_before_the_live_refresh_goes_out(self):
+        name = self.own_todo()
+        tc.watch_writes()
+        before = self.todo_version()
+        ran = self.version_when_the_live_refresh_goes_out(name, f"watched {self.token}")
+        self.assertEqual(ran, [("live refresh", before + 1), ("slow step", before + 1)])
+
+    def test_a_console_save_moves_the_version_before_the_live_refresh_goes_out(self):
+        name = self.own_todo()
+        before = self.todo_version()
+        ran = self.version_when_the_live_refresh_goes_out(name, f"console {self.token}")
+        self.assertEqual(ran, [("live refresh", before + 1), ("slow step", before + 1)])
+
     def test_every_migrate_moves_every_record_type_on(self):
         before = self.todo_version()
         unread = self.record_type("never versioned")  # stands in for a record type no request has moved yet

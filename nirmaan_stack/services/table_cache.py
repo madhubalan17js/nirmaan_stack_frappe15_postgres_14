@@ -19,6 +19,9 @@ How a kept page stays correct:
   default, READ COMMITTED), so the request's view was fixed by its first query, before the versions were read.
 * A kept page expires after KEEP_SECONDS: the safety net for a write that moves no version (raw SQL typed in the
   bench console).
+* The version moves first after a commit, before Frappe's live refresh (`list_update`) goes out to the open screens
+  (`_first_after_commit`). Frappe queues that message at the first save of the transaction, so a step queued in
+  between (Work Order phone pushes, retried with a sleep) would otherwise let a screen fetch the old page and keep it.
 * Built and not kept: Redis down, the cache switched off (`nc_table_cache: 0` in site config), a request that has
   already written, or a call the caller marks not cacheable (exports, pages over MAX_ROWS rows).
 
@@ -111,6 +114,21 @@ def has_written() -> bool:
     return bool(frappe.db.transaction_writes) or bool(frappe.db.sql(WROTE_SQL)[0][0])
 
 
+def _first_after_commit(callback: Callable[[], None]) -> None:
+    """Run `callback` before every step already queued for after this commit, Frappe's live refresh among them.
+
+    A save queues `flush_realtime_log` (the `list_update` to every open screen) in `notify_update`, before any
+    `on_change` hook and before the commit's own callbacks are added. Added last, the version would move only after
+    the screens were told to ask again, and after every slow step queued in between. Frappe's CallbackManager has no
+    public way to add in front, so this uses its queue (a deque); `test_table_cache` fails if a Frappe upgrade
+    changes that."""
+    queue = getattr(frappe.db.after_commit, "_functions", None)
+    if hasattr(queue, "appendleft"):
+        queue.appendleft(callback)
+    else:
+        frappe.db.after_commit.add(callback)
+
+
 # ---- versions moved on outside a request or job ----------------------------------------------------------------
 #
 # The bench console, bench execute and migrate patches run with no before_request or before_job, so nothing
@@ -131,7 +149,7 @@ def bump_on_save(doc, method=None) -> None:
     if saved is None:
         saved = set()
         setattr(frappe.local, _SAVED, saved)
-        frappe.db.after_commit.add(_bump_saved)
+        _first_after_commit(_bump_saved)
         frappe.db.after_rollback.add(_forget_saved)
     saved.add(doc.doctype)
 
@@ -212,7 +230,7 @@ def _before_commit(arming: int) -> None:
     doctypes = written_doctypes()
     # If the COMMIT itself fails, the rollback that follows must still re-arm (commit() cleared before_rollback).
     frappe.db.before_rollback.add(lambda: _before_rollback(arming))
-    frappe.db.after_commit.add(lambda: _after_commit(arming, doctypes))
+    _first_after_commit(lambda: _after_commit(arming, doctypes))
 
 
 def _after_commit(arming: int, doctypes: set[str]) -> None:

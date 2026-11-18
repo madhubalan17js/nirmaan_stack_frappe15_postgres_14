@@ -13,6 +13,7 @@ import { act } from "react-dom/test-utils";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { UserDataProvider } from "@/hooks/useUserData";
 import { useDialogStore } from "@/zustand/useDialogStore";
 import type { ExpenseRequest, GetRequestCatalogResponse } from "@/types/NirmaanStack/ExpenseRequest";
 import { NewExpenseRequestDialog } from "./NewExpenseRequestDialog";
@@ -75,7 +76,7 @@ const typePicker = () => fieldLabelled("Expense Type");
 describe("New Expense: picking a type", () => {
     it("hands focus to Amount within the pick itself, so the next key typed lands there", () => {
         act(() => {
-            root.render(<MemoryRouter><NewExpenseRequestDialog /></MemoryRouter>);
+            root.render(<MemoryRouter><UserDataProvider><NewExpenseRequestDialog /></UserDataProvider></MemoryRouter>);
         });
 
         // Open the picker the way a user does: press on it.
@@ -107,7 +108,7 @@ describe("Edit request: a saved request with no vendor", () => {
         } as unknown as ExpenseRequest;
         useDialogStore.setState({ newExpenseRequestDialog: false });
         act(() => {
-            root.render(<MemoryRouter><NewExpenseRequestDialog editing={editing} /></MemoryRouter>);
+            root.render(<MemoryRouter><UserDataProvider><NewExpenseRequestDialog editing={editing} /></UserDataProvider></MemoryRouter>);
         });
 
         const dialog = document.querySelector('[role="alertdialog"]')!;
