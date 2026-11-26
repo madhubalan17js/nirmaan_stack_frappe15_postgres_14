@@ -217,7 +217,7 @@
       "count": 1
     },
     "typescript/no-explicit-any": {
-      "count": 6
+      "count": 5
     }
   },
   "src/components/helpers/ProcurementActionsHeaderCard.tsx": {
@@ -286,9 +286,6 @@
   },
   "src/components/layout/action-center/RemindersSection.tsx": {
     "no-restricted-imports": {
-      "count": 1
-    },
-    "typescript/no-explicit-any": {
       "count": 1
     }
   },
@@ -650,7 +647,7 @@
       "count": 4
     },
     "typescript/no-explicit-any": {
-      "count": 9
+      "count": 8
     }
   },
   "src/hooks/useSidebarCounts.ts": {
@@ -681,9 +678,6 @@
   },
   "src/hooks/useUserData.ts": {
     "no-restricted-imports": {
-      "count": 1
-    },
-    "react-hooks/rules-of-hooks": {
       "count": 1
     }
   },
@@ -1980,9 +1974,6 @@
     }
   },
   "src/pages/ProcurementOrders/purchase-order/release-po-select.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    },
     "typescript/no-explicit-any": {
       "count": 14
     }
@@ -2206,7 +2197,7 @@
       "count": 3
     },
     "react-hooks/rules-of-hooks": {
-      "count": 28
+      "count": 27
     },
     "typescript/no-explicit-any": {
       "count": 1
@@ -2577,7 +2568,7 @@
       "count": 2
     },
     "typescript/no-explicit-any": {
-      "count": 4
+      "count": 3
     }
   },
   "src/pages/ProjectPayments/PaymentSummaryCards.tsx": {
@@ -2742,7 +2733,7 @@
       "count": 2
     },
     "typescript/no-explicit-any": {
-      "count": 3
+      "count": 2
     }
   },
   "src/pages/ProjectPayments/update-payment/EditFulfilledPaymentDialog.tsx": {
@@ -4177,7 +4168,7 @@
   },
   "src/pages/projects/components/ProjectPOSummaryTable.tsx": {
     "react-hooks/rules-of-hooks": {
-      "count": 15
+      "count": 14
     },
     "typescript/no-explicit-any": {
       "count": 2
@@ -5067,7 +5058,7 @@
       "count": 1
     },
     "typescript/no-explicit-any": {
-      "count": 2
+      "count": 1
     }
   },
   "src/pages/users/components/AssignAssetToUserDialog.tsx": {

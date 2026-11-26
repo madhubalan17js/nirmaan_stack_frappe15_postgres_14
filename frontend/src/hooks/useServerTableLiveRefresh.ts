@@ -1,4 +1,4 @@
-import { FrappeConfig, FrappeContext } from "frappe-react-sdk";
+import { FrappeConfig, FrappeContext } from "@/lib/frappe";
 import { useCallback, useContext, useEffect, useRef, useState, type MutableRefObject } from "react";
 
 import { subscribeListUpdate } from "./realtime/listUpdateHub";

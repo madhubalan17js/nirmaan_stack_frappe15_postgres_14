@@ -7,7 +7,7 @@
 //   - unmounting leaves every room.
 //
 // jsdom + react-dom/client only (no @testing-library), per frontend/CODING_STANDARDS.md § Writing a test.
-import { FrappeContext, type FrappeConfig } from "frappe-react-sdk";
+import { FrappeContext, type FrappeConfig } from "@/lib/frappe";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";

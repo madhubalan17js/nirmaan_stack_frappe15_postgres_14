@@ -25,7 +25,7 @@ describe("sameReply", () => {
     const reply = { data: [{ name: "PO-1", status: "Approved" }], total_count: 1, aggregates: { total: 10 } };
 
     it("is true for a reply with the same rows, total and figures", () => {
-        expect(sameReply(reply, JSON.parse(JSON.stringify(reply)))).toBe(true);
+        expect(sameReply(reply, structuredClone(reply))).toBe(true);
     });
 
     it("is false when a value, the total or a figure differs", () => {

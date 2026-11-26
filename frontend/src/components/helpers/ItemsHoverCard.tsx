@@ -199,8 +199,23 @@ const ItemsCardBody: React.FC<ItemsHoverCardProps> = ({
   );
 };
 
+/** One row of the card's table: a child-table row, or a Service Request row normalised above. */
+interface ItemRow {
+  name?: string;
+  id?: string;
+  item_name?: string;
+  category?: string;
+  description?: string;
+  unit?: string;
+  uom?: string;
+  quantity?: number;
+  quote?: number;
+  rate?: number;
+  make?: string;
+}
+
 interface ItemsTableProps {
-  items: any[];
+  items: ItemRow[];
   isSR: boolean;
   isPR: boolean;
   isSB: boolean;
@@ -238,7 +253,7 @@ const ItemsTable: React.FC<ItemsTableProps> = ({ items, isSR, isPR, isSB }) => {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((item: any) => (
+          {items.map((item) => (
             <TableRow key={item?.name || item?.id}>
               {" "}
               {/* Child table rows have a 'name' */}

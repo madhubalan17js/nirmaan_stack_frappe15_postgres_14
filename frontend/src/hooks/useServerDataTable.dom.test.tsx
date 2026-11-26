@@ -19,9 +19,12 @@ const fake = vi.hoisted(() => ({
     call: vi.fn(async () => ({ message: { data: [{ name: "CHQ-1" }, { name: "CHQ-2" }], total_count: 2 } })),
     reset: () => undefined,
 }));
-vi.mock("frappe-react-sdk", async () => {
+vi.mock("frappe-react-sdk", async (importOriginal) => {
     const { createContext } = await import("react");
     return {
+        // The real SDK under the mocks: `@/lib/frappe` reads every SDK hook when it loads. vitest loads the SDK's
+        // CommonJS build, whose exports sit under `default`.
+        ...(await importOriginal<{ default: object }>()).default,
         useFrappePostCall: () => ({ call: fake.call, loading: false, reset: fake.reset }),
         // No provider value: no socket, so no live refresh; the fetch on mount is what is counted.
         FrappeContext: createContext(undefined),
