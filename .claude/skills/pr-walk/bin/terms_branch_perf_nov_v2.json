@@ -1,0 +1,21 @@
+[
+ ["Before / After", "Before is GitHub develop at 31d29db45, the base perf/nov was rebased onto. After is the branch perf/nov-v2 at 790ea168f. Both run on copies of the same backup."],
+ ["Rebase conflict", "A file both perf/nov and develop changed after 11 Nov. The walk checks that develop's feature there still works and that perf/nov's change is in."],
+ ["Live refresh", "A screen that updates by itself when someone changes a record elsewhere, with no reload. The server sends a list_update message over the socket."],
+ ["Another tab / another user", "The walk makes a change in a second browser (the same user logged in again) or through the Administrator, and watches the first one."],
+ ["list_update", "Frappe's socket message that a record of a doctype was added, saved or deleted. A screen listens to it by joining that doctype's room."],
+ ["useListUpdate", "This branch's hook that runs a screen's code on each list_update of one doctype. Its users: the sidebar notifications, the reminders panel, the users list."],
+ ["useDocTypeEventListener (#1670)", "Develop's safe listener. Its room count keeps a doctype's room joined while any screen still listens, so closing one screen cannot cut off another."],
+ ["Badge", "The number beside Notifications in the sidebar: unread notifications among the newest 500."],
+ ["Raised By Me › Rejected", "A view of Project Payments for the person who raised the payment. Develop added its 'Open PO' / 'Open WO' link on 12 Nov."],
+ ["Cheque chip", "The small 'Cheque <no> · <status>' label on a cheque payment. For cheque roles it is a button that opens the Cheque; for others it is plain text."],
+ ["CHEQUE_ACCESS_PROFILES", "The roles that may open a Cheque: Admin, Accountant, Accountant Lead and the procurement roles. A PMO Executive views cheques but cannot open them."],
+ ["Vendor › Payments sub-tabs", "Paid, Cheque Pending and Other Pending Payments on a vendor's page (develop, 20 Nov)."],
+ ["Action Center", "The right-hand panel of a dashboard. Its Reminders list shows compliance tasks (TDS, GST filings) that are due."],
+ ["Release PO list", "The Purchase Orders page's tabs Approved PO ... All POs (release-po-select)."],
+ ["owner_name / raised_by_name", "The name of the person who made a record, sent with each row by the server, so the screen need not download the whole users list."],
+ ["PO Wise", "The old Payments list of every PO and WO (project-payments-list). No button leads to it any more; the walk reaches it by typed URL only to measure it."],
+ ["Typed URL", "A page opened by typing its address. It is setup for a measurement, not proof that a user can reach the screen."],
+ ["Not walked", "A claim no screen can show. The walk names the test that pins it, or says that none does."],
+ ["Must / Should / Nit / Note", "How serious a pinned point is: must fix before merge, should fix, small polish, or just worth knowing."]
+]
