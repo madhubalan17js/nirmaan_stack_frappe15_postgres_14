@@ -1,0 +1,62 @@
+[
+ [
+  "Before / After",
+  "Before is GitHub develop at 31d29db45. After is the branch redis/table-cache-v2 at b33c1cc0e: perf/nov-v2 (walked on its own) plus 9 commits. Both envs are copies of the same backup."
+ ],
+ [
+  "Live refresh",
+  "A table, badge or screen that updates by itself when someone changes a record elsewhere, with no reload. The server sends a list_update message over the socket."
+ ],
+ [
+  "list_update hub",
+  "This branch's one listener per doctype (listUpdateHub.ts). Every table and badge set on the page subscribes to it instead of joining the doctype's room on its own."
+ ],
+ [
+  "Data Updated toast",
+  "Develop's pop-up note after a table refreshed live. The branch refreshes quietly and shows no toast."
+ ],
+ [
+  "Busy viewer",
+  "Someone typing in a table's search, with a row ticked, a dialog open or the pointer on the rows. On the branch a live refresh waits and a 'New changes · Refresh' chip offers it."
+ ],
+ [
+  "Spread",
+  "Each table waits 1-2 s and each badge set 2-6 s after a change, picked at random, so many open screens do not all ask the server in the same instant."
+ ],
+ [
+  "Another user",
+  "The Administrator, saving through the REST API or a bench console in another session, while the walk's role user watches the screen."
+ ],
+ [
+  "Badge count",
+  "A number beside a sidebar entry or a tab (e.g. 'Approve PR'): how many records wait in that state for this user."
+ ],
+ [
+  "Redis table cache",
+  "On the branch, a table page (rows for one doctype, page, sort and filters) is kept in Redis for up to 10 s per permission group: users whose list queries get the same permission condition share it, so a second user with the same access gets it without searching the database. Each doctype's version moves on any committed write, which retires its old pages."
+ ],
+ [
+  "R2",
+  "The branch's rule that the doctype's cache version moves before the live refresh goes out, so a refresh can never be answered from the old page."
+ ],
+ [
+  "Access scope",
+  "What a user may see: an Admin or Accountant sees all; a Project Manager or Procurement Executive only the projects their User Permissions name. Users with a different permission condition never share a kept page."
+ ],
+ [
+  "nc_table_cache",
+  "The site config switch for the table cache. Absent or 1: on (the default). 0: off, every page is read from the database."
+ ],
+ [
+  "Room count (#1670)",
+  "Develop's count of how many screens hold a doctype's socket room, so closing one screen leaves the room only when no other screen needs it. The branch's hub now shares this count."
+ ],
+ [
+  "Conflict file",
+  "A file both this branch and develop changed after 11 Nov. Claim 8 checks develop's live features there still work on the branch."
+ ],
+ [
+  "#1729",
+  "A fix on develop: a list answered from the server's page cache showed a renamed customer's old name again after leaving and coming back."
+ ]
+]
