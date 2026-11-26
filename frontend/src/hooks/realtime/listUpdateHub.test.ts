@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { heldDoctypes, parseListUpdate, subscribeListUpdate } from "./listUpdateHub";
 import { FakeSocket } from "./testing/fakeSocket";
+import { holdRoom } from "@/lib/socketRooms";
 
 const update = (doctype: string, name = "DOC-1") => ({ doctype, name, user: "someone@example.com" });
 
@@ -27,6 +28,28 @@ describe("listUpdateHub", () => {
         offB();
         expect(socket.count("doctype_unsubscribe", "Procurement Orders")).toBe(1);
         expect(heldDoctypes(socket)).toEqual([]);
+    });
+
+    it("shares the room count with the safe listeners of @/lib/frappe (#1670): neither side's leave cuts the other off", () => {
+        // A safe listener (useDocTypeEventListener) holds the room through the same counter the hub uses.
+        const join = () => socket.emit("doctype_subscribe", "Procurement Orders");
+        const leave = () => socket.emit("doctype_unsubscribe", "Procurement Orders");
+        const releaseSafe = holdRoom(socket, "doctype:Procurement Orders", join, leave);
+        const offHub = subscribeListUpdate(socket, "Procurement Orders", { onUpdate: vi.fn() });
+        expect(socket.count("doctype_subscribe", "Procurement Orders")).toBe(1);
+
+        offHub(); // the hub's last subscriber goes, but the safe listener still holds the room
+        expect(socket.count("doctype_unsubscribe", "Procurement Orders")).toBe(0);
+
+        const onUpdate = vi.fn();
+        const offHub2 = subscribeListUpdate(socket, "Procurement Orders", { onUpdate });
+        releaseSafe(); // and the other way round
+        expect(socket.count("doctype_unsubscribe", "Procurement Orders")).toBe(0);
+        socket.receive("list_update", update("Procurement Orders"));
+        expect(onUpdate).toHaveBeenCalledTimes(1);
+
+        offHub2(); // the last holder of all leaves the room
+        expect(socket.count("doctype_unsubscribe", "Procurement Orders")).toBe(1);
     });
 
     it("delivers a list_update only to that doctype's subscribers", () => {
@@ -62,7 +85,7 @@ describe("listUpdateHub", () => {
         const sdkListener = vi.fn();
         socket.on("list_update", sdkListener);
 
-        socket.off("list_update"); // what useFrappeEventListener's clean-up does
+        socket.off("list_update"); // what the SDK's raw event listener's clean-up does
         socket.receive("list_update", update("Procurement Orders"));
 
         expect(onUpdate).toHaveBeenCalledTimes(1);

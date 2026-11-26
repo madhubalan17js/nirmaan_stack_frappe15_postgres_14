@@ -23,6 +23,7 @@
  */
 import * as sdk from "frappe-react-sdk";
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { holdRoom } from "./socketRooms";
 
 // Listed by name, never `export *`: vitest's node runner loads the SDK's CommonJS build, from which `export *`
 // re-exports nothing, so a unit test would get `undefined` where the app gets the SDK's value.
@@ -167,29 +168,7 @@ export function useSocketEventListener<T = unknown>(event: string, handler: (eve
   }, [socket, event]);
 }
 
-// How many mounted listeners hold each room, per socket. The server keeps one membership per socket, so a room's
-// leave message is sent only when its last listener unmounts. A reconnect starts the socket afresh on the server;
-// each listener then sends its join again, as the SDK does, and the counts stay as they are.
-const roomHolders = new WeakMap<Socket, Map<string, number>>();
-
-/** Counts one more holder of `room`; sends `join` when it is the first. Returns the release, which sends `leave`
- * when it was the last. */
-function holdRoom(socket: Socket, room: string, join: () => void, leave: () => void): () => void {
-  let holders = roomHolders.get(socket);
-  if (!holders) roomHolders.set(socket, (holders = new Map()));
-  const count = holders.get(room) ?? 0;
-  holders.set(room, count + 1);
-  if (count === 0) join();
-  return () => {
-    const left = (holders.get(room) ?? 1) - 1;
-    if (left > 0) {
-      holders.set(room, left);
-      return;
-    }
-    holders.delete(room);
-    leave();
-  };
-}
+// Room counting lives in `./socketRooms`, shared with the `listUpdateHub`, so all holders of a room count together.
 
 /** The SDK's `useFrappeDocTypeEventListener`, made safe: `onListUpdate` gets every `list_update` this tab receives
  * (as the SDK's does, for any doctype), the doctype's room is left only when its last listener unmounts, and only

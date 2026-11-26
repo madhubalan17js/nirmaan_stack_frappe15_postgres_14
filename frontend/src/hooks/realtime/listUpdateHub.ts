@@ -5,7 +5,7 @@
  * doctype's room (`frappe/realtime.py` publish_realtime). A socket joins with `doctype_subscribe` and leaves with
  * `doctype_unsubscribe`. Membership is yes/no, not counted.
  *
- * Why not the SDK's `useFrappeDocTypeEventListener` (frappe-react-sdk 1.17.0, Speed Plan bug B1):
+ * Why not the SDK's raw doctype listener hook (frappe-react-sdk 1.17.0, Speed Plan bug B1):
  *  1. Its clean-up calls `socket.off("list_update")` with no function, which removes EVERY screen's
  *     `list_update` listener, not just its own.
  *  2. That clean-up runs whenever the callback changes, so a table re-created its listener on every search
@@ -15,12 +15,15 @@
  * This hub fixes all three:
  *  1. It listens through socket.io's catch-all (`onAny`), which `socket.off(event)` never touches.
  *  2. Subscribers are plain entries in a map, and adding or removing one never re-attaches the socket listener.
- *  3. Rooms are counted: join when the first subscriber of a doctype arrives, leave when the last one goes. If
- *     something outside the hub (an old SDK listener) leaves a room the hub still needs, the hub joins again.
+ *  3. Rooms are counted in `@/lib/socketRooms`, together with the safe listeners of `@/lib/frappe` (#1670): the
+ *     hub holds a doctype's room while it has a subscriber, and the room is left only when no holder is left. If
+ *     something outside both (an old raw listener) leaves a room the hub still needs, the hub joins again.
  *
  * After the socket reconnects (the server forgets every room then), the hub joins every room again and calls each
  * subscriber's `onReconnect`, so a table can refresh once to catch changes missed while the connection was down.
  */
+
+import { holdRoom } from "@/lib/socketRooms";
 
 /** What Frappe sends with `list_update` (`frappe/model/document.py` notify_update). */
 export interface ListUpdateMessage {
@@ -54,6 +57,8 @@ export interface ListUpdateSocket {
 
 interface HubState {
     subscribers: Map<string, Set<ListUpdateSubscriber>>;
+    /** Per doctype, the release of the hub's one hold on its room (`holdRoom`). */
+    releases: Map<string, () => void>;
     onIncoming: AnyListener;
     onOutgoing: AnyListener;
     onReconnect: () => void;
@@ -116,7 +121,7 @@ function attach(socket: ListUpdateSocket): HubState {
     socket.onAny(onIncoming);
     socket.onAnyOutgoing(onOutgoing);
     socket.io.on("reconnect", onReconnect);
-    const state = { subscribers, onIncoming, onOutgoing, onReconnect };
+    const state = { subscribers, releases: new Map<string, () => void>(), onIncoming, onOutgoing, onReconnect };
     hubs.set(socket, state);
     return state;
 }
@@ -142,7 +147,12 @@ export function subscribeListUpdate(
     if (!forDoctype) {
         forDoctype = new Set();
         state.subscribers.set(doctype, forDoctype);
-        socket.emit("doctype_subscribe", doctype);
+        state.releases.set(doctype, holdRoom(
+            socket,
+            `doctype:${doctype}`,
+            () => socket.emit("doctype_subscribe", doctype),
+            () => socket.emit("doctype_unsubscribe", doctype),
+        ));
     }
     // Each call gets its own entry, so the same callbacks subscribed twice are two subscribers.
     const entry: ListUpdateSubscriber = { ...subscriber };
@@ -156,9 +166,12 @@ export function subscribeListUpdate(
         if (!current) return;
         current.delete(entry);
         if (current.size > 0) return;
-        // Forget the room BEFORE leaving it, so our own leave is not mistaken for someone else's.
+        // Forget the room BEFORE letting go of it, so our own leave is not mistaken for someone else's. The room is
+        // left only when no other holder (a safe listener of `@/lib/frappe`) still holds it.
         state.subscribers.delete(doctype);
-        socket.emit("doctype_unsubscribe", doctype);
+        const release = state.releases.get(doctype);
+        state.releases.delete(doctype);
+        release?.();
         if (state.subscribers.size === 0) detach(socket, state);
     };
 }
